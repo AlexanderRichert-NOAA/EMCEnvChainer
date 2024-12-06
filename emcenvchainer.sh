@@ -41,6 +41,10 @@ else
   git clone --recurse-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
 fi
 
+if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
+  compilersetting="--compiler=$COMPILER"
+fi
+
 cd spack-stack
 . setup.sh
 
@@ -50,11 +54,10 @@ fi
 
 # Create env
 upstream_path=$(echo $current_modulepath | grep -oP "^.+(?=modulefiles/Core)")
-spack stack create env \
+spack stack create env $compilersetting \
   --name $ENVNAME \
   --template empty \
   --site $PLATFORM \
-  --compiler $COMPILER
   --upstream $upstream_path
 
 cd envs/$ENVNAME
