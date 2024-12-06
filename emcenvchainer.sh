@@ -53,7 +53,7 @@ for part in $PKGSPECS; do
 done
 
 if [ ! -z "$addpkglist" ]; then
-  modargs=$(echo $addpkglist | sed 's| | --modify-pkg=|g')
+  modargs=$(echo " $addpkglist" | sed 's| | --modify-pkg=|g')
 fi
 
 # Create env
