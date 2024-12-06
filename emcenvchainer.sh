@@ -36,9 +36,9 @@ spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(
 cd ..
 
 if [ ${spackstackversion} == 1.6.0 ]; then
-  git clone --recurse-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0
 else
-  git clone --recurse-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
 fi
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
