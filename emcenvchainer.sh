@@ -31,9 +31,9 @@ cd tmp
 wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_$PLATFORM.$COMPILER.lua
 current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLATFORM.$COMPILER.lua)
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
+cd ..
 git clone --recurse-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
 cd spack-stack
-wget https://raw.githubusercontent.com/JCSDA/spack-stack/d52aec5f089d75dbddbddbf7b6f61f740396794a/spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py -O spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py
 . setup.sh
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
