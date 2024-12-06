@@ -69,7 +69,7 @@ for part in $PKGSPECS; do
   if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     pkg=${part%@*}
     version=${part#*@}
-    if [[ ! " $(spack version --safe $pkg) " =~ " $version " ]]; then
+    if [[ ! " $(spack versions --safe $pkg) " =~ " $version " ]]; then
       EDITOR=echo spack checksum --add-to-package $pkg $version
       spack config add "packages:$pkg:require:'@$version'"
     fi
