@@ -37,8 +37,11 @@ cd spack-stack
 . setup.sh
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
-  compilersetting="--compiler=$COMPILER"
+  spackextpath=spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py
+else
+  spackextpath=spack/lib/jcsda-emc/spack-stack/stack/stack_env.py
 fi
+wget https://raw.githubusercontent.com/JCSDA/spack-stack/d52aec5f089d75dbddbddbf7b6f61f740396794a/spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py -O $spackextpath
 
 if [ ! -z "$addpkglist" ]; then
   modargs=$(echo " $addpkglist" | sed 's| | --modify-pkg=|g')
@@ -46,10 +49,11 @@ fi
 
 # Create env
 upstream_path=$(echo $current_modulepath | grep -oP "^.+(?=modulefiles/Core)")
-spack stack create env $compilersetting \
+spack stack create env \
   --name $ENVNAME \
   --template empty \
   --site $PLATFORM \
+  --compiler $COMPILER
   --upstream $upstream_path
 
 cd envs/$ENVNAME
@@ -63,7 +67,7 @@ for part in $PKGSPECS; do
     version=${part#*@}
     if [[ ! " $(spack version --safe $pkg) " =~ " $version " ]]; then
       EDITOR=echo spack checksum --add-to-package $pkg $version
-      spack config add "packages:$pkg:require:'$version'"
+      spack config add "packages:$pkg:require:\'@$version\'"
     fi
   fi
 done
