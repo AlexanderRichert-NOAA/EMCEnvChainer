@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # Eventually: select application
 
 # Select platform
@@ -32,16 +34,15 @@ wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/head
 current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLATFORM.$COMPILER.lua)
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
 cd ..
-git clone --recurse-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
+
+if [ ${spackstackversion} == 1.6.0 ]; then
+  git clone --recurse-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0
+else
+  git clone --recurse-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
+fi
+
 cd spack-stack
 . setup.sh
-
-if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
-  spackextpath=spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py
-else
-  spackextpath=spack/lib/jcsda-emc/spack-stack/stack/stack_env.py
-fi
-wget https://raw.githubusercontent.com/JCSDA/spack-stack/d52aec5f089d75dbddbddbf7b6f61f740396794a/spack-ext/lib/jcsda-emc/spack-stack/stack/stack_env.py -O $spackextpath
 
 if [ ! -z "$addpkglist" ]; then
   modargs=$(echo " $addpkglist" | sed 's| | --modify-pkg=|g')
