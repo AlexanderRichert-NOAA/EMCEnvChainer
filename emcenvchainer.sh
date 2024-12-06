@@ -71,14 +71,14 @@ for part in $PKGSPECS; do
     version=${part#*@}
     if [[ ! " $(spack version --safe $pkg) " =~ " $version " ]]; then
       EDITOR=echo spack checksum --add-to-package $pkg $version
-      spack config add "packages:$pkg:require:\'@$version\'"
+      spack config add "packages:$pkg:require:'@$version'"
     fi
   fi
 done
 
 # Concretize
 spack concretize | tee log.concretize
-../../util/show_duplicate_package.py -d log.concretize
+../../util/show_duplicate_packages.py -d log.concretize
 
 # Install
 spack install
