@@ -41,7 +41,7 @@ if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
 fi
 
 for part in $PKGSPECS; do
-  if [ $(grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
+  if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     spack config add "repos:[$env/envrepo]"
     pkg=${part%@*}
     version=${part#*@}
