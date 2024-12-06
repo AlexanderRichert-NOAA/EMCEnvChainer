@@ -40,25 +40,13 @@ if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
   compilersetting="--compiler=$COMPILER"
 fi
 
-for part in $PKGSPECS; do
-  if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
-    spack config add "repos:[$env/envrepo]"
-    pkg=${part%@*}
-    version=${part#*@}
-    if [[ ! " $(spack version --safe $pkg) " =~ " $version " ]]; then
-       addpkglist+=" $pkg"
-       addspeclist+=" $part"
-    fi
-  fi
-done
-
 if [ ! -z "$addpkglist" ]; then
   modargs=$(echo " $addpkglist" | sed 's| | --modify-pkg=|g')
 fi
 
 # Create env
 upstream_path=$(echo $current_modulepath | grep -oP "^.+(?=modulefiles/Core)")
-spack stack create env $compilersetting $modargs \
+spack stack create env $compilersetting \
   --name $ENVNAME \
   --template empty \
   --site $PLATFORM \
@@ -69,8 +57,15 @@ spack env activate .
 spack add ufs-weather-model-env
 spack add $PKGSPECS
 
-for spec in $addspeclist; do
-  EDITOR=echo spack checksum --add-to-package ${spec%@*} ${spec#*@}
+for part in $PKGSPECS; do
+  if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
+    pkg=${part%@*}
+    version=${part#*@}
+    if [[ ! " $(spack version --safe $pkg) " =~ " $version " ]]; then
+      EDITOR=echo spack checksum --add-to-package $pkg $version
+      spack config add "packages:$pkg:require:'$version'"
+    fi
+  fi
 done
 
 # Concretize
