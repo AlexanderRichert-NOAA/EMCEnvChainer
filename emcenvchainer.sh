@@ -69,10 +69,8 @@ for part in $PKGSPECS; do
   if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     pkg=${part%@*}
     version=${part#*@}
-    if [[ ! " $(spack versions --safe $pkg) " =~ " $version " ]]; then
-      EDITOR=echo spack checksum --add-to-package $pkg $version
-      spack config add "packages:$pkg:require:'@$version'"
-    fi
+    EDITOR=echo spack checksum --add-to-package $pkg $version
+    spack config add "packages:$pkg:require:'@$version'"
   fi
 done
 
@@ -84,10 +82,10 @@ spack concretize | tee log.concretize
 spack install
 
 # Modules
-spack module lmod refresh --upstream-modules
+spack module lmod refresh --upstream-modules --yes-to-all
 spack stack setup-meta-modules
 
 # Spit out path for $MODULEPATH
 echo "Fingers crossed, this installation has completely successfully."
 echo 'Use the following path in your $MODULEPATH variable *in place of* the existing path.'
-echo $SPACK_ENV/install/modulefiles/Core
+echo "    $SPACK_ENV/install/modulefiles/Core"
