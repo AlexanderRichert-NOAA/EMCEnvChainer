@@ -8,10 +8,12 @@ set -e
 echo "Select a platform. For a list of platforms supported,"
 echo "see https://github.com/ufs-community/ufs-weather-model/tree/develop/modulefiles"
 read -rp "Platform (hera, hercules, etc.): " PLATFORM
+echo "Selected platform '${PLATFORM:?}'"
 
 # Select compiler
 echo "Select 'intel' 'gnu' or 'intelllvm' depending on what is available on your system."
 read -rp "Compiler: " COMPILER
+echo "Selected compiler '${COMPILER:?}'"
 
 # Select env name
 echo 'Set a name for your Spack environment. Default is $USER-$(date +%y%m%d).'
@@ -26,19 +28,22 @@ echo "  esmf@8.6.1"
 echo "  esmf@8.6.1 +debug"
 echo "  esmf@8.6.1 mapl@2.40.3.1"
 read -rp "Specs: " PKGSPECS
+echo "Selected specs: ${PKGSPECS:?}"
 
 # Get Spack
 mkdir tmp
 cd tmp
-wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_$PLATFORM.$COMPILER.lua
+echo "Getting UWM modulefile for $PLATFORM/$COMPILER..."
+wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_$PLATFORM.$COMPILER.lua &> /dev/null
 current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLATFORM.$COMPILER.lua)
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
 cd ..
 
+echo "Cloning spack-stack@${spackstackversion}..."
 if [ ${spackstackversion} == 1.6.0 ]; then
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0 &> /dev/null
 else
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion &> /dev/null
 fi
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
@@ -74,8 +79,15 @@ for part in $PKGSPECS; do
   fi
 done
 
-echo 'If you need to further customize a package (`spack edit foo`), now is the time to do so.'
-read -p "ENTER to continue with concretizing and installing."
+while true; do
+  read -rp "Enter the name of a package (e.g., 'esmf', 'parallelio') to edit with \$EDITOR ($EDITOR), or press ENTER to continue: " pkgtoedit
+  if [ -z $pkgtoedit ]; then
+    break
+  else
+    spack edit $pkgtoedit
+    unset pkgtoedit
+  fi
+done
 
 # Concretize
 spack concretize | tee log.concretize
