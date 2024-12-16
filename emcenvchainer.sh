@@ -47,7 +47,7 @@ else
 fi
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
-  compilersetting="--compiler=$COMPILER"
+  compilersetting="--compiler=${COMPILER/intelllvm/oneapi}"
 fi
 
 cd spack-stack
@@ -101,6 +101,7 @@ spack module lmod refresh --upstream-modules --yes-to-all
 spack stack setup-meta-modules
 
 # Spit out path for $MODULEPATH
+echo
 echo "Fingers crossed, this installation has completely successfully."
 echo 'Use the following path in your $MODULEPATH variable *in place of* the existing path.'
 echo "    $SPACK_ENV/install/modulefiles/Core"
