@@ -67,7 +67,7 @@ spack stack create env $compilersetting \
 
 cd envs/$ENVNAME
 spack env activate .
-spack add ufs-weather-model-env
+spack add ufs-weather-model-env ~python
 spack add $PKGSPECS
 
 for part in $PKGSPECS; do
