@@ -57,7 +57,7 @@ upstream_path=$(echo $current_modulepath | grep -oP "^.+(?=modulefiles/Core)")
 spack stack create env $compilersetting \
   --name $ENVNAME \
   --template empty \
-  --site $PLATFORM \
+  --site ${PLATFORM/gaea/gaea-c5} \
   --upstream $upstream_path
 
 cd envs/$ENVNAME
@@ -74,12 +74,15 @@ for part in $PKGSPECS; do
   fi
 done
 
+echo 'If you need to further customize a package (`spack edit foo`), now is the time to do so.'
+read -p "ENTER to continue with concretizing and installing."
+
 # Concretize
 spack concretize | tee log.concretize
-../../util/show_duplicate_packages.py -d log.concretize
+${SPACK_STACK_DIR}/util/show_duplicate_packages.py -d log.concretize
 
 # Install
-spack install
+spack install --fail-fast
 
 # Modules
 spack module lmod refresh --upstream-modules --yes-to-all
