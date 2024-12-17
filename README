@@ -2,4 +2,6 @@ This script allows a user to test one or more packages in a chained Spack enviro
 spack-stack is installed into the current directory.
 
 Usage:
+```console
   bash emcenvchainer.sh
+```
