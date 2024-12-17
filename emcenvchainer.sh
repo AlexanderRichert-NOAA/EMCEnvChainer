@@ -90,6 +90,7 @@ while true; do
 done
 
 # Concretize
+echo "Concretizing, then installing. No more input is needed, you may leave this script unattended."
 spack concretize | tee log.concretize
 ${SPACK_STACK_DIR}/util/show_duplicate_packages.py -d log.concretize
 
@@ -97,11 +98,17 @@ ${SPACK_STACK_DIR}/util/show_duplicate_packages.py -d log.concretize
 spack install --fail-fast
 
 # Modules
-spack module lmod refresh --upstream-modules --yes-to-all
-spack stack setup-meta-modules
+# Make sure 'mapl' modulefile name is set properly according to 'esmf' spec:
+echo "Generating module files"
+esmfmatch=$(spack find --format '{name}@{version} {variants.snapshot}' esmf)
+maplsuffix=$(spack find --format '{name}-{version}' esmf)
+spack config add "modules:default:lmod:mapl:suffixes:^$esmfmatch:'$maplsuffix'"
+spack module lmod refresh --upstream-modules --yes-to-all &> log.lmodrefresh
+spack stack setup-meta-modules &> log.setupmetamodules
 
 # Spit out path for $MODULEPATH
 echo
+echo "##################################################################"
 echo "Fingers crossed, this installation has completely successfully."
 echo 'Use the following path in your $MODULEPATH variable *in place of* the existing path.'
 echo "    $SPACK_ENV/install/modulefiles/Core"
