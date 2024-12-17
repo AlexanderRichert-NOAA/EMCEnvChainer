@@ -80,7 +80,8 @@ for part in $PKGSPECS; do
 done
 
 while true; do
-  read -rp "Enter the name of a package (e.g., 'esmf', 'parallelio') to edit with \$EDITOR ($EDITOR), or press ENTER to continue: " pkgtoedit
+  echo "Any new versions needed should already have been automatically added to each package's recipe."
+  read -rp "Enter the name of a package (e.g., 'esmf', 'parallelio') to further edit with \$EDITOR ($EDITOR), or press ENTER to continue: " pkgtoedit
   if [ -z $pkgtoedit ]; then
     break
   else
