@@ -116,3 +116,5 @@ echo "##################################################################"
 echo "Fingers crossed, this installation has completely successfully."
 echo 'Use the following path in your $MODULEPATH variable *in place of* the existing path.'
 echo "    $SPACK_ENV/install/modulefiles/Core"
+echo "You may use the following environment variables to override the default versions in ufs_common.lua:"
+spack find --format 'export {name}_ver={version}' $(spack dependencies ufs-weather-model-env) $(spack dependencies base-env) | grep -v 'export py-' | sed "s|-|_|g;s|^|    |;s|mapl_ver=.*|\0-$maplsuffix|"
