@@ -39,18 +39,18 @@ current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLAT
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
 cd ..
 
-echo "Cloning spack-stack@${spackstackversion}..."
+echo "Cloning spack-stack-${spackstackversion}..."
 if [ ${spackstackversion} == 1.6.0 ]; then
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0 &> /dev/null
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0 spack-stack-$spackstackversion &> /dev/null
 else
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion &> /dev/null
+  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion spack-stack-$spackstackversion &> /dev/null
 fi
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
   compilersetting="--compiler=${COMPILER/intelllvm/oneapi}"
 fi
 
-cd spack-stack
+cd spack-stack-$spackstackversion
 . setup.sh
 
 if [ ! -z "$addpkglist" ]; then
@@ -81,7 +81,7 @@ done
 
 while true; do
   echo "Any new versions needed should already have been automatically added to each package's recipe."
-  read -rp "Enter the name of a package (e.g., 'esmf', 'parallelio') to further edit with \$EDITOR ($EDITOR), or press ENTER to continue: " pkgtoedit
+  read -rp "Enter the name of a package (e.g., 'esmf', 'parallelio') to further edit with \$EDITOR, or press ENTER to continue: " pkgtoedit
   if [ -z $pkgtoedit ]; then
     break
   else
