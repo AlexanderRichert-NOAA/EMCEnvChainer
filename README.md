@@ -5,3 +5,5 @@ Usage:
 ```console
   bash emcenvchainer.sh
 ```
+
+The script will prompt the user for input several times, then can be left unattended once it begins concretization and installation.
