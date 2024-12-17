@@ -37,6 +37,8 @@ echo "Getting UWM modulefile for $PLATFORM/$COMPILER..."
 wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_$PLATFORM.$COMPILER.lua &> /dev/null
 current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLATFORM.$COMPILER.lua)
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
+wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_common.lua &> /dev/null
+uwm_packages=$(grep -oP '{\["\K[^"]+' ufs_common.lua)
 cd ..
 
 if [ ! -d spack-stack-${spackstackversion} ]; then
@@ -119,4 +121,4 @@ echo "Fingers crossed, this installation has completely successfully."
 echo 'Use the following path in your $MODULEPATH variable *in place of* the existing path.'
 echo "    $SPACK_ENV/install/modulefiles/Core"
 echo "You may use the following environment variables to override the default versions in ufs_common.lua:"
-spack find --format 'export {name}_ver={version}' $(spack dependencies ufs-weather-model-env) $(spack dependencies base-env) | grep -v 'export py-' | sed "s|-|_|g;s|^|    |;s|mapl_ver=.*|\0-$maplsuffix|"
+spack find --format 'export {name}_ver={version}' $uwm_packages | sed "s|-|_|g;s|^|    |;s|mapl_ver=.*|\0-$maplsuffix|"
