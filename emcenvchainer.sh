@@ -31,7 +31,7 @@ read -rp "Specs: " PKGSPECS
 echo "Selected specs: ${PKGSPECS:?}"
 
 # Get Spack
-mkdir tmp
+mkdir -p tmp
 cd tmp
 echo "Getting UWM modulefile for $PLATFORM/$COMPILER..."
 wget https://raw.githubusercontent.com/ufs-community/ufs-weather-model/refs/heads/develop/modulefiles/ufs_$PLATFORM.$COMPILER.lua &> /dev/null
