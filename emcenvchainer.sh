@@ -78,12 +78,15 @@ if [[ " 1.5 1.6 1.7 " =~ " ${spackstackversion:0:3} " ]]; then
   sed -i 's|fms@[^"]\+|fms|' $(spack location --package-dir ufs-weather-model-env)/package.py
 fi
 
+first_upstream=$(spack config get 'upstreams' | grep -m1 -oP "install_tree: \K.+")
+
 for part in $PKGSPECS; do
   if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     pkg=${part%@*}
     version=${part#*@}
     EDITOR=echo spack checksum --add-to-package $pkg $version
-    spack config add "packages:$pkg:require:'@$version'"
+    variants=$(spack --env $(dirname $first_upstream) find --format '{variants} {compiler_flags}' $pkg%$COMPILER)
+    spack config add "packages:$pkg:require:'@$version $variants'"
   fi
 done
 
