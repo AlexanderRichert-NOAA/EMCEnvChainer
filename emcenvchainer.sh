@@ -85,8 +85,9 @@ for part in $PKGSPECS; do
     pkg=${part%@*}
     version=${part#*@}
     EDITOR=echo spack checksum --add-to-package $pkg $version
-    variants=$(spack --env $(dirname $first_upstream) find --format '{variants} {compiler_flags}' $pkg%$COMPILER)
-    spack config add "packages:$pkg:require:'@$version $variants'"
+    spack config add "packages:$pkg:require:'@$version'"
+    variants=$(spack --env $(dirname $first_upstream) find --format '{variants} {compiler_flags}' $pkg%$COMPILER | sed "s|\"|'|g;s|snapshot=[^ ]\+||")
+    spack config add "packages:$pkg:variants:'$variants'"
   fi
 done
 
