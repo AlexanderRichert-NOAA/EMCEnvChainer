@@ -74,6 +74,10 @@ spack env activate .
 spack add ufs-weather-model-env ~python
 spack add $PKGSPECS
 
+if [[ " 1.5 1.6 1.7 " =~ " ${spackstackversion:0:3} " ]]; then
+  sed -i 's|fms@[^"]\+|fms|' $(spack location --package-dir ufs-weather-model-env)/package.py
+fi
+
 for part in $PKGSPECS; do
   if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     pkg=${part%@*}
