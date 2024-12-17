@@ -39,11 +39,13 @@ current_modulepath=$(grep -oP 'prepend_path\("MODULEPATH",\s*"\K[^"]+' ufs_$PLAT
 spackstackversion=$(echo $current_modulepath | grep -oP '/spack-stack-\K[\d\.]+(?=/)')
 cd ..
 
-echo "Cloning spack-stack-${spackstackversion}..."
-if [ ${spackstackversion} == 1.6.0 ]; then
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0 spack-stack-$spackstackversion &> /dev/null
-else
-  git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion spack-stack-$spackstackversion &> /dev/null
+if [ ! -d spack-stack-${spackstackversion} ]; then
+  echo "Cloning spack-stack-${spackstackversion}..."
+  if [ ${spackstackversion} == 1.6.0 ]; then
+    git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/AlexanderRichert-NOAA/spack-stack -b multichain-1.6.0 spack-stack-$spackstackversion &> /dev/null
+  else
+    git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/JCSDA/spack-stack -b release/$spackstackversion spack-stack-$spackstackversion &> /dev/null
+  fi
 fi
 
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
