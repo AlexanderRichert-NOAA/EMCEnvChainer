@@ -86,8 +86,11 @@ for part in $PKGSPECS; do
     version=${part#*@}
     EDITOR=echo spack checksum --add-to-package $pkg $version
     spack config add "packages:$pkg:require:'@$version'"
-    variants=$(spack --env $(dirname $first_upstream) find --format '{variants} {compiler_flags}' $pkg%$COMPILER | head -1 | sed "s|snapshot=[^ ]\+||")
+    variants=$(spack --env $(dirname $first_upstream) find --format '{variants}' $pkg%$COMPILER | head -1)
     spack config add "packages:$pkg:variants:$variants"
+    # This is the easiest way to add compiler flags:
+    flags=$(spack --env $(dirname $first_upstream) find --format '{compiler_flags}' $pkg%$COMPILER | head -1)
+    if [ ! -z "$flags" ]; then spack add $pkg $flags; fi
   fi
 done
 
