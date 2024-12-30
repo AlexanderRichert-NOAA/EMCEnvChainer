@@ -50,8 +50,10 @@ if [ ! -d spack-stack-${spackstackversion} ]; then
   fi
 fi
 
+compilerspack=$(echo $COMPILER | sed 's:intelllvm:oneapi:;s:gnu:gcc:')
+
 if [[ ! " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
-  compilersetting="--compiler=${COMPILER/intelllvm/oneapi}"
+  compilersetting="--compiler=${compilerspack}"
 fi
 
 cd spack-stack-$spackstackversion
@@ -71,8 +73,12 @@ spack stack create env $compilersetting \
 
 cd envs/$ENVNAME
 spack env activate .
+spack config add 'concretizer:unify:true'
 spack add ufs-weather-model-env ~python
 spack add $PKGSPECS
+if [[ " 1.5 1.6 " =~ " ${spackstackversion:0:3} " ]]; then
+  spack config add "packages:all:require:'%$compilerspack'"
+fi
 
 if [[ " 1.5 1.6 1.7 " =~ " ${spackstackversion:0:3} " ]]; then
   sed -i 's|fms@[^"]\+|fms|' $(spack location --package-dir ufs-weather-model-env)/package.py
@@ -86,10 +92,10 @@ for part in $PKGSPECS; do
     version=${part#*@}
     EDITOR=echo spack checksum --add-to-package $pkg $version
     spack config add "packages:$pkg:require:'@$version'"
-    variants=$(spack --env $(dirname $first_upstream) find --format '{variants}' $pkg%$COMPILER | head -1)
+    variants=$(spack --env $(dirname $first_upstream) find --format '{variants}' $pkg%$compilerspack | head -1)
     spack config add "packages:$pkg:variants:$variants"
     # This is the easiest way to add compiler flags:
-    flags=$(spack --env $(dirname $first_upstream) find --format '{compiler_flags}' $pkg%$COMPILER | head -1)
+    flags=$(spack --env $(dirname $first_upstream) find --format '{compiler_flags}' $pkg%$compilerspack | head -1)
     if [ ! -z "$flags" ]; then spack add $pkg $flags; fi
   fi
 done
