@@ -90,7 +90,9 @@ for part in $PKGSPECS; do
   if [ $(echo $part | grep -Pc "[-\w]+@[-\.\w]+") -eq 1 ]; then
     pkg=${part%@*}
     version=${part#*@}
-    EDITOR=echo spack checksum --add-to-package $pkg $version
+    if [ ${version::4} != git. ]; then
+      EDITOR=echo spack checksum --add-to-package $pkg $version
+    fi
     spack config add "packages:$pkg:require:'@$version'"
     variants=$(spack --env $(dirname $first_upstream) find --format '{variants}' $pkg%$compilerspack | head -1)
     spack config add "packages:$pkg:variants:$variants"
