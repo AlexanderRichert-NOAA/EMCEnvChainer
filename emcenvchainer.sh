@@ -119,7 +119,7 @@ echo "If you don't see any '[^]' at the beginning of some/most lines in the conc
 echo "it means the upstream environment(s) could not be found and used. Any package where the "
 echo "output starts with ' -  ' is one that will be compiled as opposed to using an existing copy."
 spack concretize | tee log.concretize
-${SPACK_STACK_DIR}/util/show_duplicate_packages.py -d log.concretize
+${SPACK_STACK_DIR}/util/show_duplicate_packages.py -d log.concretize -i cmake
 
 # Install
 spack install --fail-fast
