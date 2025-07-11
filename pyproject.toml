@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "emcenvchainer"
 version = "0.1.0"
 description = "A TUI utility for creating test installations using Spack environment chaining"
-readme = "README.md"
 license = {text = "MIT"}
 authors = [
     {name = "Alex Richert"},

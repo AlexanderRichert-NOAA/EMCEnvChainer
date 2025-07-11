@@ -4,17 +4,10 @@
 from setuptools import setup, find_packages
 import os
 
-# Read the README file
-def read_file(filename):
-    """Read file contents."""
-    with open(os.path.join(os.path.dirname(__file__), filename), 'r', encoding='utf-8') as f:
-        return f.read()
-
 setup(
     name="emcenvchainer",
     version="0.1.0",
     description="A TUI utility for creating test installations using Spack environment chaining",
-    long_description=read_file("README.md"),
     long_description_content_type="text/markdown",
     author="EMC Development Team",
     author_email="",
