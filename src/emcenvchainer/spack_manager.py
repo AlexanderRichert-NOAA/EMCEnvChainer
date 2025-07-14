@@ -1,5 +1,6 @@
 """Spack integration and environment management."""
 
+import io
 import os
 import re
 import sys
@@ -97,7 +98,7 @@ class SpackManager:
         # Still print important messages to console
         print(message)
     
-    def _run_spack_command(self, args: List[str], cwd: str = None) -> subprocess.CompletedProcess:
+    def _run_spack_command(self, args: List[str], cwd: str = None, vars: Optional[dict] = {}) -> subprocess.CompletedProcess:
         """Run a spack command.
         
         Args:
@@ -116,12 +117,16 @@ class SpackManager:
                 self.logger.info(f"Working directory: {cwd}")
         
         try:
+            env = os.environ.copy()
+            for key in vars.keys():
+                env[key] = vars[key]
             result = subprocess.run(
                 cmd,
                 cwd=cwd,
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                env=env,
             )
             
             if self.logger:
@@ -478,8 +483,8 @@ class SpackManager:
             
             # Create spack.yaml configuration by copying and modifying upstream
             self._log_and_print("Creating spack.yaml configuration...")
-            spack_yaml = self._create_spack_yaml(upstream_path, packages, env_path, packages_needing_edit)
-            spack_yaml_path = env_path / "spack.yaml"
+            spack_yaml = self._create_spack_yaml(upstream_env_path, packages, env_path, packages_needing_edit)
+            spack_yaml_path = os.path.join(env_path, "spack.yaml")
             
             with open(spack_yaml_path, 'w') as f:
                 f.write(spack_yaml)
@@ -488,15 +493,15 @@ class SpackManager:
                 self.logger.info(f"Created spack.yaml at: {spack_yaml_path}")
         
             # Add our package specifications using spack add
-            self._log_and_print("Adding package specifications to environment...")
-            for pkg in packages:
-                spec_str = self._build_spec_string(pkg)
-                result = self._run_spack_command(['-e', str(env_path), 'add', spec_str])
-                if result.returncode != 0:
-                    self._log_and_print(f"Warning: Failed to add spec {spec_str}: {result.stderr}", "warning")
-                else:
-                    if self.logger:
-                        self.logger.info(f"Added spec: {spec_str}")
+#            self._log_and_print("Adding package specifications to environment...")
+#            for pkg in packages:
+#                spec_str = self._build_spec_string(pkg)
+#                result = self._run_spack_command(['-e', str(env_path), 'add', spec_str])
+#                if result.returncode != 0:
+#                    self._log_and_print(f"Warning: Failed to add spec {spec_str}: {result.stderr}", "warning")
+#                else:
+#                    if self.logger:
+#                        self.logger.info(f"Added spec: {spec_str}")
             
             self._log_and_print(f"✓ Created environment directory: {env_path}")
             self._log_and_print(f"✓ Created spack.yaml with upstream: {upstream_path}")
@@ -521,11 +526,7 @@ class SpackManager:
         # upstream_install_path is typically: .../envs/env-name/install/
         # We want: .../envs/env-name/
         install_path = Path(upstream_install_path)
-        if install_path.name == "install":
-            return install_path.parent
-        else:
-            # If not ending in 'install', assume it's the env path
-            return install_path
+        return install_path.parent
     
     def _copy_site_common_dirs(self, upstream_env_path: Path, new_env_path: Path):
         """Copy site and common directories from upstream environment.
@@ -550,11 +551,11 @@ class SpackManager:
                 if self.logger:
                     self.logger.info(f"No {dirname} directory found in upstream environment")
     
-    def _create_spack_yaml(self, upstream_path: str, packages: List[Dict], env_path: Path, packages_needing_edit: List[Dict]) -> str:
+    def _create_spack_yaml(self, upstream_env_path: str, packages: List[Dict], env_path: Path, packages_needing_edit: List[Dict]) -> str:
         """Create spack.yaml content by copying and modifying upstream spack.yaml.
         
         Args:
-            upstream_path: Path to upstream installation
+            upstream_env_path: Path to upstream Spack env
             packages: List of package specifications
             env_path: Path to new environment
             packages_needing_edit: List of packages needing custom recipes
@@ -563,10 +564,9 @@ class SpackManager:
             YAML content as string
         """
         # Find upstream environment path and copy spack.yaml
-        upstream_env_path = self._find_upstream_env_path(upstream_path)
-        upstream_spack_yaml = upstream_env_path / "spack.yaml"
+        upstream_spack_yaml = os.path.join(upstream_env_path, "spack.yaml")
         
-        if not upstream_spack_yaml.exists():
+        if not os.path.exists(upstream_spack_yaml):
             raise RuntimeError(f"Upstream spack.yaml not found at: {upstream_spack_yaml}")
         
         # Initialize ruamel.yaml with comment preservation
@@ -590,16 +590,30 @@ class SpackManager:
             # Insert at beginning for highest priority
             if '$env/envrepo' not in spack_section['repos']:
                 spack_section['repos'].insert(0, '$env/envrepo')
-        
-        if 'specs' in spack_section:
-            spack_section['specs'] = []
+
+        if 'definitions' in spack_section:
+            definitions_names = [list(x.keys())[0] for x in spack_section['definitions']]
+            if len(spack_section['definitions'])==2 and set(definitions_names) == {'compilers', 'packages'}:
+                for i in [0,1]:
+                    if 'packages' in spack_section['definitions'][i]:
+                        spack_section['definitions'][i]['packages'] = []
+                        for pkg in packages:
+                            if pkg['name'] == 'scotch':
+                                spack_section['specs'].append(self._build_spec_string(pkg))
+                            else:
+                                spack_section['definitions'][i]['packages'].append(self._build_spec_string(pkg))
+            else:
+                del(spack_section['definitions'])
+                spack_section['specs'] = specs
+        else:
+            spack_section['specs'] = specs
         
         # Set upstream configuration
         if 'upstreams' not in spack_section:
             spack_section['upstreams'] = {}
         
         # Insert emcenvchainer-upstream as the first entry
-        upstream_config = {'install_tree': upstream_path}
+        upstream_config = {'install_tree': os.path.join(upstream_env_path, "install")}
         
         # If upstreams already exists and has entries, preserve order with our entry first
         if spack_section['upstreams']:
@@ -618,7 +632,7 @@ class SpackManager:
         if 'concretizer' not in spack_section:
             spack_section['concretizer'] = {}
         spack_section['concretizer']['unify'] = True
-        spack_section['concretizer']['reuse'] = 'dependencies'
+        spack_section['concretizer']['reuse'] = True
         
         # Set config settings
         if 'config' not in spack_section:
@@ -652,7 +666,6 @@ class SpackManager:
                     spack_section['packages'][package_key]['variants'] = variants
         
         # Convert back to string
-        import io
         string_stream = io.StringIO()
         yaml.dump(spack_config, string_stream)
         return string_stream.getvalue()
@@ -690,8 +703,10 @@ class SpackManager:
             Tuple of (success, list of packages to be installed, command output)
         """
         try:
+            self._run_spack_command(['-e', env_path, '-C', env_path, 'bootstrap', 'root', os.path.join(env_path, 'bootstrap')])
+            self._run_spack_command(['-e', env_path, '-C', env_path, 'bootstrap', 'now'])
             # Run spack concretize using -e flag
-            result = self._run_spack_command(['-e', env_path, 'concretize'])
+            result = self._run_spack_command(['-e', env_path, '-C', env_path, 'concretize'])
             
             concretize_output = result.stdout + result.stderr if result.stdout or result.stderr else ""
             
@@ -721,7 +736,7 @@ class SpackManager:
             True if successful, False otherwise
         """
         try:
-            cmd = [str(self.spack_exe), '-e', env_path, 'install']
+            cmd = [str(self.spack_exe), '-e', env_path, '-C', env_path, 'install']
             result = subprocess.run(cmd, check=False)
             return result.returncode == 0
         except Exception:
@@ -740,7 +755,7 @@ class SpackManager:
             self._log_and_print("Refreshing Lmod modules...")
             
             # Run module refresh equivalent
-            result = self._run_spack_command(['-e', env_path, 'module', 'tcl', 'refresh', '--yes-to-all', '--upstream-modules'])
+            result = self._run_spack_command(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules'])
             
             if result.returncode != 0:
                 error_msg = f"Module creation failed: {result.stderr}"
@@ -1443,13 +1458,14 @@ class SpackManager:
             package_name = pkg["name"]
             
             try:
+                SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
                 # Use spack find with format to get both version and variants from upstream environment
                 result = self._run_spack_command([
                     '-e', str(upstream_env_path), 
                     'find', 
                     '--format', '{version}:VARIANTS:{variants}', 
                     package_name
-                ])
+                ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
 
                 if result.returncode == 0 and result.stdout.strip():
                     # Take the first line in case there are multiple copies
@@ -1465,9 +1481,13 @@ class SpackManager:
                         
                         # Store the info for this package
                         package_info[package_name] = {
-                            'version': version,
                             'variants': variants,
                         }
+
+                        # Use version from modulefile in case of multiple versions in upstream env.
+                        if 'current_version' in pkg:
+                            # MAPL version needs special treatment because of '-esmf-x.y.z'.
+                            package_info[package_name]['version'] = re.sub("-esmf-.*", "", pkg['current_version'])
                         
                         if self.logger:
                             self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}")
