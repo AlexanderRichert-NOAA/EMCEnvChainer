@@ -1569,7 +1569,7 @@ class EmcEnvChainerTUI:
             
             # Final success message
             success_msg = f"Environment created successfully!\n"
-            success_msg += "Environment path: {env_path}\n\n"
+            success_msg += f"Environment path: {env_path}\n\n"
             success_msg += "• To load packages via spack-stack metamodules (stack-*), prepend the following to $MODULEPATH *instead* of the existing spack-stack installation:\n"
             success_msg += f"{modulefiles_path}\n\n"
             success_msg += "• To export package version variables (e.g., 'hdf5_ver', 'netcdf_c_ver') into the environment:\n"
