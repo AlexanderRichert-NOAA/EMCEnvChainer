@@ -1023,7 +1023,7 @@ class EmcEnvChainerTUI:
             welcome_lines = [
                 "",
                 f"Platform: {self.platform.name}",
-                f"Spack Stack: {self.platform.spack_stack_path}",
+                f"spack-stack top-level directory: {self.platform.spack_stack_path}",
                 "",
                 "Create a new Spack environment directory",
                 "chained to an existing spack-stack installation.",
@@ -1365,8 +1365,8 @@ class EmcEnvChainerTUI:
         # Create display options for radio button menu
         options = []
         for pkg in all_packages:
-            # Skip ufs_common and any packages starting with stack
-            if pkg["name"] == "ufs_common" or pkg["name"].startswith("stack"):
+            # Skip ufs_common, cmake, and spack-stack metamodules (stack-*)
+            if pkg["name"] in ["ufs_common", "cmake"] or pkg["name"].startswith("stack-"):
                 continue
                 
             pkg_type = "📦"
