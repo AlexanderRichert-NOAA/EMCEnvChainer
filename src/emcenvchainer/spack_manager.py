@@ -1369,6 +1369,8 @@ class SpackManager:
                 if not success:
                     # If that fails, try to get it from remote
                     recipe_content = self._fetch_recipe_content(package_name)
+                    # Remove newer type hinting that breaks with spack-stack 1.9 and before
+                    recipe_content.replace(": EnvironmentModifications", "")
                     if recipe_content:
                         with open(package_py_path, 'w') as f:
                             f.write(recipe_content)
