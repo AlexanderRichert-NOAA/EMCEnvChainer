@@ -639,7 +639,14 @@ class SpackManager:
             spack_section['config'] = {}
         spack_section['config']['deprecated'] = True
         spack_section['config']['build_stage'] = '$env/build_stage'
-        
+
+        # Always set cmake, gmake, and ecbuild as non-buildable
+        always_upstream_packages = ['cmake', 'gmake', 'ecbuild']
+        for pkg_name in always_upstream_packages:
+            if pkg_name not in spack_section['packages']:
+                spack_section['packages'][pkg_name] = {}
+            spack_section['packages'][pkg_name]['buildable'] = False
+
         # Add package-specific overrides for packages being updated
         package_info = self._get_upstream_package_info(upstream_env_path, packages)
         if package_info:
