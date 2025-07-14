@@ -20,10 +20,27 @@ class Config:
                 "branch": "spack-stack-dev"
             },
             "platforms": {
+                "ursa": {
+                    "name": "Ursa (RDHPCS)",
+                    "spack_stack_path": "/contrib/spack-stack",
+                    "detection_paths": ["/tmp_mnt/ursa"],
+                    "model_applications": {
+                        "ufs_weather_model": {
+                            "name": "UFS Weather Model",
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.intelllvm.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.gnu.lua"
+                            ],
+                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                        }
+                    }
+                },
                 "hera": {
                     "name": "NOAA Hera",
                     "spack_stack_path": "/tmp/spack-stack",
-                    "detection_paths": ["/tmp", "/var"],
+                    "detection_paths": ["/xxxtmp", "/xxxvar"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
