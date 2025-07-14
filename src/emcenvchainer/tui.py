@@ -1224,13 +1224,12 @@ class EmcEnvChainerTUI:
             
         Returns:
             Tuple of (spack_root, upstream_path)
+            
+        Raises:
+            RuntimeError: If Spack installation cannot be inferred from path structure
         """
         if installation.get("type") == "model_application":
-            # For model applications, we need to:
-            # 1. Extract the install path from the model application
-            # 2. Use a Spack installation as the upstream source
-            
-            # Get the install path from the model application
+            # For model applications, extract install path and infer Spack root
             app = installation["application"]
             selected_module_url = installation.get("selected_module_url")
             
@@ -1246,22 +1245,58 @@ class EmcEnvChainerTUI:
             if not install_path:
                 raise RuntimeError("Could not extract install path from model application!")
             
-            # Use the first available Spack installation for the spack_root
-            spack_installations = self.platform.spack_installations
-            if not spack_installations:
-                raise RuntimeError("No Spack installations found! Cannot create environment without Spack.")
-            
-            # Use the first Spack installation's spack_root
-            spack_installation = spack_installations[0]
-            spack_root = self.platform.get_spack_root(spack_installation)
             upstream_path = install_path
             
+            # Infer Spack root from upstream path structure
+            # Expected structure: /path/to/spack-stack/spack-stack-X.Y.Z/envs/env-name/install
+            # Spack root should be: /path/to/spack-stack/spack-stack-X.Y.Z/spack
+            upstream_parts = Path(upstream_path).parts
+            
+            try:
+                # Find 'install' in the path and go up 3 levels to get to spack-stack root
+                install_index = upstream_parts.index('install')
+                if install_index >= 3:  # Need at least: .../envs/env-name/install
+                    # Go up 3 levels: install -> env-name -> envs -> spack-stack-root
+                    spack_stack_root = os.path.join('/', *upstream_parts[:install_index-2])
+                    spack_root = os.path.join(spack_stack_root, 'spack')
+                    
+                    # Verify the Spack installation exists
+                    spack_exe = os.path.join(spack_root, 'bin', 'spack')
+                    if not os.path.exists(spack_exe):
+                        raise RuntimeError(
+                            f"Spack executable not found at inferred location: {spack_exe}\n"
+                            f"Cannot infer Spack installation from upstream path: {upstream_path}\n"
+                            f"Expected structure: .../spack-stack-X.Y.Z/envs/env-name/install"
+                        )
+                    
+                    return spack_root, upstream_path
+                else:
+                    raise RuntimeError(
+                        f"Invalid upstream path structure: {upstream_path}\n"
+                        f"Expected structure: .../spack-stack-X.Y.Z/envs/env-name/install"
+                    )
+                    
+            except ValueError:
+                # 'install' not found in path
+                raise RuntimeError(
+                    f"Cannot infer Spack installation from upstream path: {upstream_path}\n"
+                    f"Expected path to end with '.../envs/env-name/install'"
+                )
+            
         else:
-            # For regular Spack installations
+            # For regular Spack installations, use the installation directly
             spack_root = self.platform.get_spack_root(installation)
             upstream_path = installation["install_path"]
-        
-        return spack_root, upstream_path
+            
+            # Verify the Spack installation exists
+            spack_exe = os.path.join(spack_root, 'bin', 'spack')
+            if not os.path.exists(spack_exe):
+                raise RuntimeError(
+                    f"Spack executable not found at: {spack_exe}\n"
+                    f"Installation path: {upstream_path}"
+                )
+            
+            return spack_root, upstream_path
 
     def _get_package_specifications_with_manager(self, stdscr, installation: Dict) -> Tuple[Optional[List[Dict]], Optional[SpackManager]]:
         """Get package specifications from user.
