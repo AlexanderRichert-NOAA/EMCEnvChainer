@@ -24,6 +24,7 @@ class Config:
                     "name": "Ursa (RDHPCS)",
                     "spack_stack_path": "/contrib/spack-stack",
                     "detection_paths": ["/tmp_mnt/ursa"],
+                    "cpu_target": "zen3",
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",

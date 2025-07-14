@@ -433,7 +433,7 @@ class SpackManager:
         return packages_for_editing
 
     def create_environment(self, env_name: str, upstream_path: str, 
-                          packages: List[Dict], work_dir: str) -> Tuple[str, List[Dict]]:
+                          packages: List[Dict], work_dir: str, platform) -> Tuple[str, List[Dict]]:
         """Create a new Spack environment with upstream chaining.
         
         Args:
@@ -483,7 +483,7 @@ class SpackManager:
             
             # Create spack.yaml configuration by copying and modifying upstream
             self._log_and_print("Creating spack.yaml configuration...")
-            spack_yaml = self._create_spack_yaml(upstream_env_path, packages, env_path, packages_needing_edit)
+            spack_yaml = self._create_spack_yaml(upstream_env_path, packages, env_path, packages_needing_edit, platform)
             spack_yaml_path = os.path.join(env_path, "spack.yaml")
             
             with open(spack_yaml_path, 'w') as f:
@@ -551,7 +551,7 @@ class SpackManager:
                 if self.logger:
                     self.logger.info(f"No {dirname} directory found in upstream environment")
     
-    def _create_spack_yaml(self, upstream_env_path: str, packages: List[Dict], env_path: Path, packages_needing_edit: List[Dict]) -> str:
+    def _create_spack_yaml(self, upstream_env_path: str, packages: List[Dict], env_path: Path, packages_needing_edit: List[Dict], platform) -> str:
         """Create spack.yaml content by copying and modifying upstream spack.yaml.
         
         Args:
@@ -674,7 +674,18 @@ class SpackManager:
             elif pkg_name not in spack_section['packages']:
                 spack_section['packages'][pkg_name] = {}
             spack_section['packages'][pkg_name]['buildable'] = False
+
+        # Set target by platform config
+        cpu_target = platform.config.get('cpu_target', '')
+        if cpu_target:
+            if self.logger:
+                self.logger.info(f"Setting CPU target for all packages: {cpu_target}")
         
+            # Set target for all packages
+            if 'all' not in spack_section['packages']:
+                spack_section['packages']['all'] = {}
+            spack_section['packages']['all']['target'] = [cpu_target]
+
         # Convert back to string
         string_stream = io.StringIO()
         yaml.dump(spack_config, string_stream)

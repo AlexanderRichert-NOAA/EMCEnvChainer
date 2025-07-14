@@ -1518,7 +1518,7 @@ class EmcEnvChainerTUI:
             # Create environment
             work_dir = os.getcwd()
             env_path, packages_needing_edit = spack_manager.create_environment(
-                env_name, upstream_path, packages, work_dir
+                env_name, upstream_path, packages, work_dir, self.platform,
             )
             
             has_custom_recipes = len(packages_needing_edit) > 0
