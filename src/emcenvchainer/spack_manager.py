@@ -600,7 +600,7 @@ class SpackManager:
                         for pkg in packages:
                             if pkg['name'] == 'scotch':
                                 spack_section['specs'].append(self._build_spec_string(pkg))
-                            else:
+                            elif pkg['name'] not in ['cmake']:
                                 spack_section['definitions'][i]['packages'].append(self._build_spec_string(pkg))
             else:
                 del(spack_section['definitions'])
@@ -1486,8 +1486,7 @@ class SpackManager:
 
                         # Use version from modulefile in case of multiple versions in upstream env.
                         if 'current_version' in pkg:
-                            # MAPL version needs special treatment because of '-esmf-x.y.z'.
-                            package_info[package_name]['version'] = re.sub("-esmf-.*", "", pkg['current_version'])
+                            package_info[package_name]['version'] = pkg['current_version']
                         
                         if self.logger:
                             self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}")
