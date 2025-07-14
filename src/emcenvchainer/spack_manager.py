@@ -734,7 +734,7 @@ class SpackManager:
             return False, [str(e)], ""
     
     def install_environment_interactive(self, env_path: str) -> bool:
-        """Install packages in the environment with live output.
+        """Install packages in the environment with live output and logging.
         
         Args:
             env_path: Path to environment
@@ -743,10 +743,73 @@ class SpackManager:
             True if successful, False otherwise
         """
         try:
-            cmd = [str(self.spack_exe), '-e', env_path, '-C', env_path, 'install']
-            result = subprocess.run(cmd, check=False)
-            return result.returncode == 0
-        except Exception:
+            import threading
+            import time
+            
+            cmd = [str(self.spack_exe), '-e', env_path, 'install']
+            
+            if self.logger:
+                self.logger.info(f"Starting interactive spack install: {' '.join(cmd)}")
+            
+            # Use Popen for real-time output capture and stdin pass-through
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Combine stderr with stdout
+                stdin=sys.stdin,  # Pass through stdin for user interaction
+                text=True,
+                bufsize=1  # Line buffering
+            )
+            
+            # Capture output in a separate thread while allowing terminal interaction
+            output_lines = []
+            
+            def output_reader():
+                """Read output from subprocess and write to both terminal and log."""
+                try:
+                    while True:
+                        line = process.stdout.readline()
+                        if not line:
+                            break
+                        
+                        # Write to terminal immediately (preserving user interaction)
+                        sys.stdout.write(line)
+                        sys.stdout.flush()
+                        
+                        # Store for logging
+                        output_lines.append(line.rstrip())
+                        
+                        # Log to file if logger is available
+                        if self.logger:
+                            self.logger.info(f"SPACK: {line.rstrip()}")
+                            
+                except Exception as e:
+                    if self.logger:
+                        self.logger.error(f"Error in output reader thread: {e}")
+            
+            # Start the output reading thread
+            reader_thread = threading.Thread(target=output_reader, daemon=True)
+            reader_thread.start()
+            
+            # Wait for process to complete
+            return_code = process.wait()
+            
+            # Wait for output thread to finish reading any remaining output
+            reader_thread.join(timeout=5.0)
+            
+            # Log final status
+            if self.logger:
+                self.logger.info(f"Spack install completed with return code: {return_code}")
+                if output_lines:
+                    self.logger.info(f"Total output lines captured: {len(output_lines)}")
+            
+            return return_code == 0
+            
+        except Exception as e:
+            error_msg = f"Error during interactive install: {e}"
+            if self.logger:
+                self.logger.error(error_msg)
+            print(f"Install failed: {e}")
             return False
     
     def refresh_modules(self, env_path: str) -> str:
