@@ -1411,7 +1411,7 @@ class EmcEnvChainerTUI:
             options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']}){description}")
         
         # Show radio button selection menu
-        radio_menu = RadioButtonMenu(stdscr, "Select Packages to Include in Environment")
+        radio_menu = RadioButtonMenu(stdscr, "Select packages to include in environment")
         selected_indices = radio_menu.display_menu(options)
         
         if selected_indices is None:
