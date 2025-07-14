@@ -120,6 +120,8 @@ class SpackManager:
             env = os.environ.copy()
             for key in vars.keys():
                 env[key] = vars[key]
+                if key == "SPACK_ENV":
+                    env[key] = ""
             result = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -882,45 +884,22 @@ class SpackManager:
         Returns:
             True if version exists, False otherwise
         """
-        try:
-            # Strip whitespace from inputs to be more robust
-            package_name = package_name.strip()
-            version = version.strip()
-            
-            # Use spack versions to get all available versions for the package
-            result = self._run_spack_command(['versions', '--safe', package_name])
-            
-            if result.returncode != 0:
-                # Package doesn't exist at all
-                return False
-            
-            # Parse the output to find versions
-            output = result.stdout
-            
-            # spack versions output format:
-            # ==> Safe versions (already checksummed):
-            #   1.0.0  1.1.0  1.2.0  master
-            # ==> Remote versions (not yet checksummed):
-            #   1.3.0  1.4.0
-            
-            for line in output.split('\n'):
-                line = line.strip()
-                
-                # Skip header lines and empty lines
-                if not line or line.startswith('==>') or line.startswith('---'):
-                    continue
-                
-                # Parse versions from the line
-                # Remove brackets and split by whitespace
-                versions_in_line = line.replace('[', '').replace(']', '').split()
-                if version in versions_in_line:
-                    return True
-            
+        # Strip whitespace from inputs to be more robust
+        package_name = package_name.strip()
+        version = version.strip()
+        
+        # Use spack versions to get all available versions for the package
+        result = self._run_spack_command(['versions', '--safe', package_name])
+        assert result.returncode == 0, result.stderr
+        
+        if result.returncode != 0:
+            # Package doesn't exist at all
             return False
-            
-        except Exception as e:
-            print(f"Warning: Failed to check package version {package_name}@{version}: {e}")
-            return False
+        
+        # Parse the output to find versions
+        available_versions = re.split(r"[\n ]+", result.stdout.strip())
+
+        return version in available_versions
 
     def queue_checksum_operation(self, package_name: str, version: str) -> None:
         """Queue a checksum operation to be performed when the environment is created.
