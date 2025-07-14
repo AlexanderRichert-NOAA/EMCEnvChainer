@@ -1863,8 +1863,8 @@ echo "using spack-stack installation at {spack_stack_path}"
         
         try:
             # Run spack find to get package versions using SpackManager
-            args = ['find', '--format', 'export {name}_ver={version}']
-            result = spack_manager._run_spack_command(args, cwd=env_path)
+            args = ['-e', env_path, 'find', '--format', 'export {name}_ver={version}']
+            result = spack_manager._run_spack_command(args)
             
             if result.returncode == 0:
                 # Process the output to replace hyphens with underscores before the equal sign
