@@ -4,8 +4,10 @@ import io
 import os
 import re
 import sys
+import shlex
 import shutil
 import subprocess
+import threading
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -468,16 +470,14 @@ class SpackManager:
 
             # Process any pending recipes that were collected during package specification
             packages_needing_edit = self._process_pending_recipes(str(env_path))
+            
+            # Process any pending Git commit operations (these also create custom recipes)
+            git_packages_needing_edit = self._process_pending_git_commits(str(env_path))
+            packages_needing_edit.extend(git_packages_needing_edit)
                         
-            # Create custom repository structure in the environment
-            if packages_needing_edit:
+            # Create custom repository structure in the environment if any packages need it
+            if packages_needing_edit or self.pending_checksums:
                 self._ensure_env_repository(str(env_path))
-            
-            # Process any pending checksum operations
-            self._process_pending_checksums(str(env_path))
-            
-            # Process any pending Git commit operations
-            self._process_pending_git_commits(str(env_path))
             
             # Find and copy site/common directories from upstream environment
             upstream_env_path = self._find_upstream_env_path(upstream_path)
@@ -490,6 +490,10 @@ class SpackManager:
             
             with open(spack_yaml_path, 'w') as f:
                 f.write(spack_yaml)
+            
+            # Process any pending checksum operations (must be done after spack.yaml is created)
+            checksum_packages_needing_edit = self._process_pending_checksums(str(env_path))
+            packages_needing_edit.extend(checksum_packages_needing_edit)
             
             if self.logger:
                 self.logger.info(f"Created spack.yaml at: {spack_yaml_path}")
@@ -1299,7 +1303,7 @@ class SpackManager:
         if not self.pending_git_commits:
             return []
             
-        print(f"Processing {len(self.pending_git_commits)} pending Git commit operation(s)...")
+        self._log_and_print(f"Processing {len(self.pending_git_commits)} pending Git commit operation(s)...")
         
         # Get the environment repository path
         repo_path = Path(env_path) / "envrepo"
@@ -1313,7 +1317,7 @@ class SpackManager:
             commit_hash = git_commit_info['commit_hash']
             
             try:
-                print(f"Adding Git commit version for {package_name}@{version} (commit: {commit_hash[:8]}...)")
+                self._log_and_print(f"Adding Git commit version for {package_name}@{version} (commit: {commit_hash[:8]}...)")
                 
                 # Create package directory if it doesn't exist
                 package_dir = packages_dir / package_name
@@ -1326,21 +1330,21 @@ class SpackManager:
                 if not success:
                     # If that fails, try to get it from remote
                     recipe_content = self._fetch_recipe_content(package_name)
-                    # Remove newer type hinting that breaks with spack-stack 1.9 and before
-                    recipe_content.replace(": EnvironmentModifications", "")
                     if recipe_content:
+                        # Remove newer type hinting that breaks with spack-stack 1.9 and before
+                        recipe_content = recipe_content.replace(": EnvironmentModifications", "")
                         with open(package_py_path, 'w') as f:
                             f.write(recipe_content)
-                        print(f"  ✓ Fetched recipe from remote repository")
+                        self._log_and_print(f"  ✓ Fetched recipe from remote repository for {package_name}")
                     else:
-                        print(f"  ✗ Could not obtain recipe for {package_name}")
+                        self._log_and_print(f"  ✗ Could not obtain recipe for {package_name}", "error")
                         continue
                 
                 # Add the Git commit version to the recipe
                 success = self._add_git_commit_version_to_recipe(package_py_path, version, commit_hash)
                 
                 if success:
-                    print(f"  ✓ Added Git commit version {version} (commit: {commit_hash[:8]}...) to {package_name}")
+                    self._log_and_print(f"  ✓ Added Git commit version {version} (commit: {commit_hash[:8]}...) to {package_name}")
                     # Add to packages for editing
                     packages_for_editing.append({
                         'package_name': package_name,
@@ -1353,10 +1357,10 @@ class SpackManager:
                         'commit_hash': commit_hash
                     })
                 else:
-                    print(f"  ✗ Failed to add Git commit version to {package_name}")
+                    self._log_and_print(f"  ✗ Failed to add Git commit version to {package_name}", "error")
                     
             except Exception as e:
-                print(f"  ✗ Error processing Git commit for {package_name}@{version}: {e}")
+                self._log_and_print(f"  ✗ Error processing Git commit for {package_name}@{version}: {e}", "error")
         
         # Clear pending git commits after processing
         self.pending_git_commits.clear()
@@ -1425,7 +1429,8 @@ class SpackManager:
                     return False
                     
         except Exception as e:
-            print(f"Error modifying recipe: {e}")
+            if self.logger:
+                self.logger.error(f"Error modifying recipe: {e}")
             return False
 
     def _fetch_and_write_all_remote_files(self, package_name: str, package_dir: Path):
