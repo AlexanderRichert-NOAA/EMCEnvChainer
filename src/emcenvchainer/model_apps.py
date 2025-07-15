@@ -80,14 +80,11 @@ class ModelApplication:
         if not self.install_path_regex:
             return None
         
-        try:
-            module_content = self.download_module_file()
-            match = re.search(self.install_path_regex, module_content)
-            if match:
-                self._install_path = match.group(1)
-                return self._install_path
-        except Exception:
-            pass
+        module_content = self.download_module_file()
+        match = re.search(self.install_path_regex, module_content)
+        if match:
+            self._install_path = match.group(1)
+            return self._install_path
         
         return None
     
