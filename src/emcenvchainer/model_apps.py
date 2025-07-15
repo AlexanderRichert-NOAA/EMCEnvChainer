@@ -114,13 +114,9 @@ class ModelApplication:
                 'pattern': r'depends_on\("([^@]+)@([^"]+)"\)',
                 'handler': self._handle_depends_on_pattern
             },
-            'load_simple': {
-                'pattern': r'load\(\"([^\"]+)\"\)',
-                'handler': self._handle_simple_load_pattern
-            },
-            'pathjoin_load': {
-                'pattern': r'load\(pathJoin\("([^"]+)",\s*([^)]+)\)\)',
-                'handler': self._handle_pathjoin_pattern
+            'load_unified': {
+                'pattern': r'load\((?:pathJoin\("([^"]+)",\s*([^)]+)\)|\"([^\"]+)\")\)',
+                'handler': self._handle_unified_load_pattern
             },
             'version_variable': {
                 'pattern': r'([a-zA-Z0-9_]+)_ver\s*=\s*os\.getenv\("[^"]+"\)\s*or\s*"([^"]+)"',
@@ -169,40 +165,40 @@ class ModelApplication:
         version = match.group(2)
         return (package_name, version)
 
-    def _handle_simple_load_pattern(self, match, module_content):
-        """Handle simple load("package") patterns."""
-        full_spec = match.group(1).lower()
-        
-        # Skip anything containing ufs_common or stack
-        if "ufs_common" in full_spec or "stack" in full_spec:
-            return None
-        
-        if '/' in full_spec:
-            parts = full_spec.split('/')
-            package_name = parts[0]
-            version = parts[1] if len(parts) > 1 else None
-            if version:
+    def _handle_unified_load_pattern(self, match, module_content):
+        """Handle both load("package/version") and load(pathJoin("package", version_var)) patterns."""
+        # Check if this is a pathJoin pattern (groups 1 and 2) or simple pattern (group 3)
+        if match.group(1) is not None:  # pathJoin pattern
+            package_name = match.group(1).lower()
+            version_var = match.group(2).strip()
+            
+            # Skip stack-* packages and ufs_common
+            if package_name.startswith("stack-") or package_name == "ufs_common":
+                return None
+            
+            # Try to find the version by looking for the variable definition
+            version_pattern = f'{version_var.replace("_ver", "")}_ver\\s*=.*?"([^"]+)"'
+            version_match = re.search(version_pattern, module_content)
+            if version_match:
+                version = version_match.group(1)
                 return (package_name, version)
-        
-        return None
-
-    def _handle_pathjoin_pattern(self, match, module_content):
-        """Handle load(pathJoin("package", package_ver)) patterns."""
-        package_name = match.group(1).lower()
-        version_var = match.group(2).strip()
-        
-        # Skip stack-* packages and ufs_common
-        if package_name.startswith("stack-") or package_name == "ufs_common":
+            
             return None
-        
-        # Try to find the version by looking for the variable definition
-        version_pattern = f'{version_var.replace("_ver", "")}_ver\\s*=.*?"([^"]+)"'
-        version_match = re.search(version_pattern, module_content)
-        if version_match:
-            version = version_match.group(1)
-            return (package_name, version)
-        
-        return None
+        else:  # Simple load pattern
+            full_spec = match.group(3).lower()
+            
+            # Skip anything containing ufs_common or stack
+            if "ufs_common" in full_spec or "stack" in full_spec:
+                return None
+            
+            if '/' in full_spec:
+                parts = full_spec.split('/')
+                package_name = parts[0]
+                version = parts[1] if len(parts) > 1 else None
+                if version:
+                    return (package_name, version)
+            
+            return None
 
     def _handle_version_variable_pattern(self, match, module_content):
         """Handle package_ver=os.getenv("package_ver") or "version" patterns."""
