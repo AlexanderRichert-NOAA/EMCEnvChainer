@@ -45,7 +45,7 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/orion.intelllvm.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_orion.intelllvm.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
@@ -59,8 +59,8 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/hercules.intelllvm.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/hercules.gnu.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hercules.intelllvm.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hercules.gnu.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
@@ -74,8 +74,8 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/derecho.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/derecho.gnu.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_derecho.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_derecho.gnu.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
@@ -89,7 +89,7 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/jet.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_jet.intel.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
@@ -103,7 +103,7 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac5.intelllvm.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac5.intelllvm.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
@@ -117,8 +117,8 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac6.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac6.intelllvm.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac6.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac6.intelllvm.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
