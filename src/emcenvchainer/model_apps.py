@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
-from .config import Config
-
 
 class ModelApplication:
     """Represents a model application with its module file."""
@@ -279,7 +277,7 @@ class ModelApplication:
         """Get list of upgradable packages from the common module file.
         
         Returns:
-            List of dictionaries with package name, current version, and description
+            List of dictionaries with package name and current version
         """
         # Return empty list if no common module URL is defined
         common_module_url = self.config.get("common_module_url")
@@ -323,7 +321,7 @@ class ModelApplication:
             for match in matches:
                 result = config['handler'](match, common_module_content)
                 if result:
-                    package_name, version, description = result
+                    package_name, version = result
                     # Clean version to remove ESMF suffixes
                     version = re.sub(r'-esmf-.*', '', version)
                     
@@ -331,7 +329,6 @@ class ModelApplication:
                         upgradable_packages.append({
                             "name": package_name,
                             "version": version,
-                            "description": description
                         })
         
         # Remove duplicates by package name
@@ -348,7 +345,7 @@ class ModelApplication:
         """Handle UFS table format: {["package"] = "version"}."""
         package_name = match.group(1).lower()
         version = match.group(2)
-        return (package_name, version, "")
+        return (package_name, version)
 
     def _handle_pathjoin_upgradable_pattern(self, match, module_content):
         """Handle pathJoin pattern for upgradable packages."""
@@ -359,7 +356,7 @@ class ModelApplication:
         version_match = re.search(version_pattern, module_content)
         version = version_match.group(1) if version_match else None
         if version:
-            return (package_name, version, "")
+            return (package_name, version)
         return None
 
     def _handle_local_version_pattern(self, match, module_content):
@@ -368,7 +365,7 @@ class ModelApplication:
         # Clean up package name
         package_name = package_name.replace("_version", "").replace("_ver", "")
         version = match.group(2)
-        return (package_name, version, "")
+        return (package_name, version)
 
     def _is_valid_upgradable_package(self, package_name, version):
         """Check if a package name and version are valid for upgradable packages."""

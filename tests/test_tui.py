@@ -163,17 +163,6 @@ class TestPackageSpecDialog:
         
         assert result is True
     
-    def test_validate_and_add_version_not_exists(self, package_dialog, mock_spack_manager, mock_stdscr):
-        """Test version validation when version doesn't exist."""
-        mock_spack_manager.check_package_version_exists.return_value = False
-        mock_spack_manager.check_version_in_remote_repo.return_value = True
-        mock_spack_manager.add_pending_recipe = Mock()
-        
-        with patch.object(package_dialog, '_add_version_to_custom_repo', return_value=True):
-            result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
-            
-            assert result is True
-    
     def test_show_error(self, package_dialog, mock_stdscr):
         """Test error message display."""
         package_dialog._show_error("Test error message")
@@ -358,8 +347,10 @@ class TestEmcEnvChainerTUI:
             
             assert result is None
     
-    def test_select_installation_default(self, tui_app, mock_stdscr):
+    @patch('os.path.exists')
+    def test_select_installation_default(self, mock_exists, tui_app, mock_stdscr):
         """Test installation selection with default option."""
+        mock_exists.return_value = True  # Mock that spack executable exists
         mock_stdscr.getch.return_value = ord('\n')  # Enter to select first option
         
         installation = tui_app._select_installation(mock_stdscr)
@@ -415,8 +406,10 @@ class TestEmcEnvChainerTUI:
         
         assert result is None
     
-    def test_get_spack_config_jcsda_stack(self, tui_app):
+    @patch('os.path.exists')
+    def test_get_spack_config_jcsda_stack(self, mock_exists, tui_app):
         """Test getting Spack config for JCSDA stack."""
+        mock_exists.return_value = True  # Mock that spack executable exists
         installation = {"type": "jcsda-spack-stack", "path": "/path/to/stack", "install_path": "/path/to/install"}
         
         spack_root, upstream_path = tui_app._get_spack_config(installation)
@@ -425,8 +418,10 @@ class TestEmcEnvChainerTUI:
         assert spack_root == "/test/stack/spack"
         assert upstream_path == "/path/to/install"
     
-    def test_get_spack_config_custom(self, tui_app):
+    @patch('os.path.exists')
+    def test_get_spack_config_custom(self, mock_exists, tui_app):
         """Test getting Spack config for custom installation."""
+        mock_exists.return_value = True  # Mock that spack executable exists
         installation = {"type": "custom", "spack_root": "/custom/spack", "branch": "custom-branch", "install_path": "/custom/install"}
         
         spack_root, upstream_path = tui_app._get_spack_config(installation)

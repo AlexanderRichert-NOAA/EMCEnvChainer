@@ -493,17 +493,6 @@ class SpackManager:
             
             if self.logger:
                 self.logger.info(f"Created spack.yaml at: {spack_yaml_path}")
-        
-            # Add our package specifications using spack add
-#            self._log_and_print("Adding package specifications to environment...")
-#            for pkg in packages:
-#                spec_str = self._build_spec_string(pkg)
-#                result = self._run_spack_command(['-e', str(env_path), 'add', spec_str])
-#                if result.returncode != 0:
-#                    self._log_and_print(f"Warning: Failed to add spec {spec_str}: {result.stderr}", "warning")
-#                else:
-#                    if self.logger:
-#                        self.logger.info(f"Added spec: {spec_str}")
             
             self._log_and_print(f"✓ Created environment directory: {env_path}")
             self._log_and_print(f"✓ Created spack.yaml with upstream: {upstream_path}")
@@ -528,7 +517,13 @@ class SpackManager:
         # upstream_install_path is typically: .../envs/env-name/install/
         # We want: .../envs/env-name/
         install_path = Path(upstream_install_path)
-        return install_path.parent
+        
+        # If the path ends with 'install', remove it
+        if install_path.name == 'install':
+            return install_path.parent
+        else:
+            # If it doesn't end with 'install', assume it's already the env path
+            return install_path
     
     def _copy_site_common_dirs(self, upstream_env_path: Path, new_env_path: Path):
         """Copy site and common directories from upstream environment.
@@ -584,6 +579,9 @@ class SpackManager:
             spack_config['spack'] = {}
         
         spack_section = spack_config['spack']
+        
+        # Create specs list from packages
+        specs = [self._build_spec_string(pkg) for pkg in packages]
         
         # Add custom repository if needed (at the beginning for priority)
         if packages_needing_edit:
@@ -643,11 +641,10 @@ class SpackManager:
         spack_section['config']['build_stage'] = '$env/build_stage'
 
         # Add package-specific overrides for packages being updated
+        if 'packages' not in spack_section:
+            spack_section['packages'] = {}
         package_info = self._get_upstream_package_info(upstream_env_path, packages)
-        if package_info:
-            if 'packages' not in spack_section:
-                spack_section['packages'] = {}
-            
+        if package_info:            
             for package_name, info in package_info.items():
                 version = info.get('version', '')
                 variants = info.get('variants', '')
@@ -716,7 +713,7 @@ class SpackManager:
         
         return spec
     
-    def concretize_environment(self, env_path: str) -> Tuple[bool, List[str], str]:
+    def concretize_environment(self, env_path: str) -> Tuple[bool, str]:
         """Concretize the environment and check for new installations.
         
         Args:
@@ -733,18 +730,10 @@ class SpackManager:
             
             concretize_output = result.stdout + result.stderr if result.stdout or result.stderr else ""
             
-            if result.returncode != 0:
-                return False, [f"Concretization failed: {result.stderr}"], concretize_output
-            
-            # Get the specs that would be installed
-            result = self._run_spack_command(['-e', env_path, 'find'])
-            
             if result.returncode == 0:
-                # Parse output to find new installations
-                specs = result.stdout.strip().split('\n') if result.stdout.strip() else []
-                return True, specs, concretize_output
+                return True, concretize_output
             else:
-                return True, [], concretize_output
+                return False, [f"Concretization failed: {result.stderr}"], concretize_output
                 
         except Exception as e:
             return False, [str(e)], ""
@@ -890,7 +879,6 @@ class SpackManager:
         
         # Use spack versions to get all available versions for the package
         result = self._run_spack_command(['versions', '--safe', package_name])
-        assert result.returncode == 0, result.stderr
         
         if result.returncode != 0:
             # Package doesn't exist at all
@@ -900,22 +888,6 @@ class SpackManager:
         available_versions = re.split(r"[\n ]+", result.stdout.strip())
 
         return version in available_versions
-
-    def queue_checksum_operation(self, package_name: str, version: str) -> None:
-        """Queue a checksum operation to be performed when the environment is created.
-        
-        Args:
-            package_name: Name of the package
-            version: Version to add checksum for
-        """
-        operation = {
-            'package_name': package_name,
-            'version': version,
-            'operation': 'checksum'
-        }
-        
-        if operation not in self.pending_checksums:
-            self.pending_checksums.append(operation)
 
     def _fetch_recipe_content(self, package_name: str) -> str:
         """Fetch the recipe content for a package from the remote repository.
@@ -1286,21 +1258,6 @@ class SpackManager:
         
         print("\n✓ Manual recipe editing phase completed.")
         return True
-    
-    def test_spack_installation(self) -> bool:
-        """Test if Spack is properly installed and accessible.
-        
-        Returns:
-            True if Spack is working, False otherwise
-        """
-        if not self.spack_exe.exists():
-            return False
-        
-        try:
-            result = self._run_spack_command(['--version'])
-            return result.returncode == 0
-        except Exception:
-            return False
     
     def get_local_package_path(self, package_name: str) -> str:
         """Get the local path to a package's package.py file.

@@ -85,7 +85,7 @@ class Platform:
 
 
 class PlatformDetector:
-    """Detects the current platform based on filesystem paths."""
+    """Detects the current platform based on filesystem paths (or $SITE_OVERRIDE)."""
     
     def __init__(self, config: Optional[Config] = None):
         """Initialize platform detector.
@@ -104,7 +104,7 @@ class PlatformDetector:
         # Check built-in platform configurations
         platforms = self.config.get_platforms()
         for platform_key, platform_config in platforms.items():
-            if self._check_platform_paths(platform_config):
+            if self._check_platform_paths(platform_config) or os.getenv("SITE_OVERRIDE")==platform_key:
                 return Platform(
                     name=platform_config.get("name", platform_key),
                     spack_stack_path=platform_config["spack_stack_path"],

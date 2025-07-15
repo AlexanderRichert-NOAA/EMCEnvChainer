@@ -29,7 +29,6 @@ class Config:
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.intel.lua",
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.intelllvm.lua",
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.gnu.lua"
                             ],
@@ -38,57 +37,38 @@ class Config:
                         }
                     }
                 },
-                "hera": {
-                    "name": "NOAA Hera",
-                    "spack_stack_path": "/tmp/spack-stack",
-                    "detection_paths": ["/xxxtmp", "/xxxvar"],
-                    "model_applications": {
-                        "ufs_weather_model": {
-                            "name": "UFS Weather Model",
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hera.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hera.gnu.lua"
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)"\)'
-                        }
-                    }
-                },
                 "orion": {
-                    "name": "NOAA Orion", 
+                    "name": "Orion (RDHPCS/MSU)", 
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack",
-                    "detection_paths": ["/work", "/work2"],
+                    "detection_paths": ["/work", "/scratch/orion"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/orion.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/orion.gnu.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/orion.intelllvm.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
-                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
                 "hercules": {
-                    "name": "NOAA Hercules",
+                    "name": "Hercules (RDHPCS/MSU)",
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack", 
-                    "detection_paths": ["/work", "/work2"],
+                    "detection_paths": ["/work", "/scratch/hercules"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/hercules.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/hercules.intelllvm.lua",
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/hercules.gnu.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
-                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
                 "derecho": {
-                    "name": "NCAR Derecho",
-                    "spack_stack_path": "/glade/work/epicufsrt/contrib/spack-stack",
+                    "name": "Derecho (NCAR)",
+                    "spack_stack_path": "/glade/work/epicufsrt/contrib/spack-stack/derecho",
                     "detection_paths": ["/glade/work", "/glade/u"],
                     "model_applications": {
                         "ufs_weather_model": {
@@ -98,12 +78,11 @@ class Config:
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/derecho.gnu.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
-                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
                 "jet": {
-                    "name": "NOAA Jet",
+                    "name": "Jet (RDHPCS)",
                     "spack_stack_path": "/lfs4/HFIP/hfv3gfs/role.epic/spack-stack",
                     "detection_paths": ["/lfs4", "/mnt/lfs4"],
                     "model_applications": {
@@ -111,38 +90,45 @@ class Config:
                             "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/jet.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/jet.gnu.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
-                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
-                "gaea": {
-                    "name": "NOAA Gaea",
-                    "spack_stack_path": "/ncrc/proj/epic/spack-stack",
-                    "detection_paths": ["/ncrc/proj", "/ncrc/home"],
+                "gaea-c5": {
+                    "name": "Gaea C5 (NOAA)",
+                    "spack_stack_path": "/ncrc/proj/epic/spack-stack/c5",
+                    "detection_paths": ["/ncrc", "/gpfs/f5"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
                             "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaea.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaea.gnu.lua"
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac5.intelllvm.lua"
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
-                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
-                }
+                },
+                "gaea-c6": {
+                    "name": "Gaea C6 (NOAA)",
+                    "spack_stack_path": "/ncrc/proj/epic/spack-stack/c6",
+                    "detection_paths": ["/ncrc", "/gpfs/f6"],
+                    "model_applications": {
+                        "ufs_weather_model": {
+                            "name": "UFS Weather Model",
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac6.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/gaeac6.intelllvm.lua"
+                            ],
+                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                    }
+                },
             },
             "spack": {
                 "custom_repo_name": "emcenvchainer-custom",
                 "environment_prefix": "emcenv-"
             },
-            "ui": {
-                "theme": "default",
-                "show_help": True
-            }
         }
     
     def get(self, key: str, default=None):

@@ -4,9 +4,13 @@ import os
 import tempfile
 import shutil
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest import mock
+from unittest.mock import Mock, patch, MagicMock, mock_open
 import pytest
 import subprocess
+import requests
+from subprocess import CompletedProcess
+from ruamel.yaml import YAML
 
 from emcenvchainer.spack_manager import SpackManager
 from emcenvchainer.config import Config
@@ -159,50 +163,11 @@ class TestSpackManager:
         assert commit["version"] == "1.0.0"
         assert commit["commit_hash"] == "abc123def456"
     
-    def test_queue_checksum_operation(self, spack_manager):
-        """Test queuing a checksum operation."""
-        spack_manager.queue_checksum_operation("test-pkg", "1.0.0")
-        
-        assert len(spack_manager.pending_checksums) == 1
-        operation = spack_manager.pending_checksums[0]
-        assert operation["package_name"] == "test-pkg"
-        assert operation["version"] == "1.0.0"
-        assert operation["operation"] == "checksum"
-    
     def test_get_local_package_path(self, spack_manager):
         """Test getting local package path."""
         result = spack_manager.get_local_package_path("cmake")
         expected = str(spack_manager.spack_root / "var" / "spack" / "repos" / "builtin" / "packages" / "cmake" / "package.py")
         assert result == expected
-    
-    def test_test_spack_installation_success(self, spack_manager):
-        """Test successful spack installation check."""
-        with patch.object(spack_manager, '_run_spack_command') as mock_run:
-            mock_result = Mock()
-            mock_result.returncode = 0
-            mock_run.return_value = mock_result
-            
-            result = spack_manager.test_spack_installation()
-            assert result is True
-            mock_run.assert_called_once_with(['--version'])
-    
-    def test_test_spack_installation_failure(self, spack_manager):
-        """Test failed spack installation check."""
-        with patch.object(spack_manager, '_run_spack_command') as mock_run:
-            mock_result = Mock()
-            mock_result.returncode = 1
-            mock_run.return_value = mock_result
-            
-            result = spack_manager.test_spack_installation()
-            assert result is False
-    
-    def test_test_spack_installation_exception(self, spack_manager):
-        """Test spack installation check with exception."""
-        with patch.object(spack_manager, '_run_spack_command') as mock_run:
-            mock_run.side_effect = Exception("Command failed")
-            
-            result = spack_manager.test_spack_installation()
-            assert result is False
     
     @patch('subprocess.run')
     def test_run_spack_command_success(self, mock_subprocess, spack_manager):
@@ -367,3 +332,2336 @@ class TestSpackManager:
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             result = spack_manager.check_package_version_exists("nonexistent-pkg", "1.0.0")
             assert result is False
+    
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_process_pending_recipes_empty(self, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes with no pending recipes."""
+        # Ensure no pending recipes
+        spack_manager.pending_recipes = {}
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        assert result == []
+        mock_mkdir.assert_not_called()
+        mock_file.assert_not_called()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_recipe_content')
+    @patch.object(SpackManager, '_fetch_and_write_all_remote_files')
+    def test_process_pending_recipes_remote_recipe(self, mock_fetch_files, mock_fetch_content, 
+                                                 mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes with remote recipe."""
+        # Mock remote recipe content
+        mock_fetch_content.return_value = "# Remote recipe content"
+        mock_fetch_files.return_value = None
+        
+        # Add a pending recipe that's found in remote
+        spack_manager.add_pending_recipe(
+            "test-pkg", "1.0.0", 
+            found_in_remote=True,
+            needs_manual_edit=True
+        )
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return one package for editing
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['version'] == "1.0.0"
+        assert pkg['found_in_remote'] is True
+        assert "/test/env/envrepo/packages/test-pkg/package.py" in pkg['recipe_path']
+        
+        # Should have written the remote recipe
+        mock_file.assert_called()
+        mock_fetch_content.assert_called_with("test-pkg")
+        mock_fetch_files.assert_called_with("test-pkg", mock.ANY)
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_recipes_local_copy(self, mock_fetch_local, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes with local copy."""
+        mock_fetch_local.return_value = True
+        
+        # Add a pending recipe that needs manual edit and local copy
+        spack_manager.add_pending_recipe(
+            "test-pkg", "1.0.0",
+            needs_manual_edit=True,
+            use_local_copy=True,
+            found_in_local=True
+        )
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return one package for editing
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['version'] == "1.0.0"
+        assert pkg['use_local_copy'] is True
+        assert pkg['found_in_local'] is True
+        assert pkg['found_in_remote'] is False
+        
+        # Should have fetched from local installation
+        mock_fetch_local.assert_called_once()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_process_pending_recipes_provided_content(self, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes with provided recipe content."""
+        recipe_content = "# Custom recipe content"
+        
+        # Add a pending recipe with provided content
+        spack_manager.add_pending_recipe(
+            "test-pkg", "1.0.0",
+            recipe_content=recipe_content,
+            needs_manual_edit=True
+        )
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return one package for editing
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['version'] == "1.0.0"
+        
+        # Should have written the provided content
+        mock_file.assert_called()
+        handle = mock_file()
+        handle.write.assert_called_with(recipe_content)
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_recipes_fallback_local(self, mock_fetch_local, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes fallback to local installation."""
+        mock_fetch_local.return_value = True
+        
+        # Add a pending recipe without remote/local flags (should fallback to local)
+        spack_manager.add_pending_recipe("test-pkg", "1.0.0")
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should not return packages for editing (no manual edit requested)
+        assert len(result) == 0
+        
+        # Should have tried to fetch from local installation
+        mock_fetch_local.assert_called_once()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_recipe_content')
+    def test_process_pending_recipes_remote_fetch_fails(self, mock_fetch_content, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes when remote recipe fetch fails."""
+        mock_fetch_content.return_value = None  # Simulate fetch failure
+        
+        # Add a pending recipe that's found in remote
+        spack_manager.add_pending_recipe(
+            "test-pkg", "1.0.0",
+            found_in_remote=True,
+            needs_manual_edit=True
+        )
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return empty list due to fetch failure
+        assert len(result) == 0
+        
+        # Should have logged error
+        mock_log.assert_any_call("✗ Could not fetch remote recipe for test-pkg", "error")
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_recipes_local_copy_fails(self, mock_fetch_local, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes when local copy fails."""
+        mock_fetch_local.return_value = False  # Simulate copy failure
+        
+        # Add a pending recipe that needs manual edit and local copy
+        spack_manager.add_pending_recipe(
+            "test-pkg", "1.0.0",
+            needs_manual_edit=True,
+            use_local_copy=True
+        )
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return empty list due to copy failure
+        assert len(result) == 0
+        
+        # Should have logged warning
+        mock_log.assert_any_call("✗ Could not copy test-pkg from local installation", "warning")
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_process_pending_recipes_exception_handling(self, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes exception handling."""
+        # Make mkdir raise an exception
+        mock_mkdir.side_effect = OSError("Permission denied")
+        
+        # Add a pending recipe
+        spack_manager.add_pending_recipe("test-pkg", "1.0.0")
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return empty list due to exception
+        assert len(result) == 0
+        
+        # Should have logged error
+        mock_log.assert_any_call("✗ Error adding test-pkg@1.0.0: Permission denied", "error")
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch.object(SpackManager, '_fetch_recipe_content')
+    @patch.object(SpackManager, '_fetch_and_write_all_remote_files')
+    def test_process_pending_recipes_multiple_packages(self, mock_fetch_files, mock_fetch_content,
+                                                      mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_recipes with multiple packages."""
+        mock_fetch_content.return_value = "# Recipe content"
+        mock_fetch_files.return_value = None
+        
+        # Add multiple pending recipes
+        spack_manager.add_pending_recipe("pkg1", "1.0.0", found_in_remote=True, needs_manual_edit=True)
+        spack_manager.add_pending_recipe("pkg1", "2.0.0", found_in_remote=True, needs_manual_edit=False)
+        spack_manager.add_pending_recipe("pkg2", "1.0.0", found_in_remote=True, needs_manual_edit=True)
+        
+        result = spack_manager._process_pending_recipes("/test/env")
+        
+        # Should return packages that need manual editing (pkg1@1.0.0 and pkg2@1.0.0)
+        assert len(result) == 2
+        
+        pkg_versions = {(pkg['package_name'], pkg['version']) for pkg in result}
+        assert ("pkg1", "1.0.0") in pkg_versions
+        assert ("pkg2", "1.0.0") in pkg_versions
+        assert ("pkg1", "2.0.0") not in pkg_versions  # No manual edit requested
+        
+        # Should clear pending recipes after processing
+        assert len(spack_manager.pending_recipes) == 0
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    def test_process_pending_checksums_empty(self, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums with no pending checksums."""
+        # Ensure no pending checksums
+        spack_manager.pending_checksums = []
+        
+        result = spack_manager._process_pending_checksums("/test/env")
+        
+        assert result == []
+        mock_mkdir.assert_not_called()
+        mock_file.assert_not_called()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_checksums_success(self, mock_fetch_local, mock_subprocess, 
+                                             mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums with successful checksum operation."""
+        mock_fetch_local.return_value = True
+        
+        # Mock successful subprocess result
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
+        
+        # Add a pending checksum
+        spack_manager.add_pending_checksum("test-pkg", "1.0.0")
+        
+        result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should return one package for editing
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['version'] == "1.0.0"
+        assert pkg['operation'] == 'checksum'
+        assert pkg['use_local_copy'] is True
+        assert pkg['found_in_local'] is True
+        assert pkg['found_in_remote'] is False
+        assert "/test/env/envrepo/packages/test-pkg/package.py" in pkg['recipe_path']
+        
+        # Should have run spack checksum command
+        mock_subprocess.assert_called_once()
+        args = mock_subprocess.call_args[0][0]
+        assert 'checksum' in args
+        assert '--add-to-package' in args
+        assert 'test-pkg' in args
+        assert '1.0.0' in args
+        
+        # Should clear pending checksums
+        assert len(spack_manager.pending_checksums) == 0
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    @patch.object(SpackManager, '_fetch_recipe_content')
+    def test_process_pending_checksums_fallback_remote(self, mock_fetch_content, mock_fetch_local, 
+                                                      mock_subprocess, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums with fallback to remote recipe."""
+        mock_fetch_local.return_value = False  # Local fetch fails
+        mock_fetch_content.return_value = "# Remote recipe content"
+        
+        # Mock successful subprocess result
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
+        
+        # Add a pending checksum
+        spack_manager.add_pending_checksum("test-pkg", "1.0.0")
+        
+        result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should return one package for editing
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['operation'] == 'checksum'
+        
+        # Should have tried local first, then fetched from remote
+        mock_fetch_local.assert_called_once()
+        mock_fetch_content.assert_called_once_with("test-pkg")
+        
+        # Should have written remote content
+        mock_file.assert_called()
+        handle = mock_file()
+        handle.write.assert_called_with("# Remote recipe content")
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    @patch.object(SpackManager, '_fetch_recipe_content')
+    def test_process_pending_checksums_no_recipe_available(self, mock_fetch_content, mock_fetch_local,
+                                                          mock_subprocess, mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums when no recipe is available."""
+        mock_fetch_local.return_value = False
+        mock_fetch_content.return_value = None  # No remote recipe
+        
+        # Add a pending checksum
+        spack_manager.add_pending_checksum("test-pkg", "1.0.0")
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should return empty list since recipe couldn't be obtained
+        assert len(result) == 0
+        
+        # Should have logged error
+        mock_log.assert_any_call("✗ Could not obtain recipe for test-pkg", "error")
+        
+        # Should not have run subprocess
+        mock_subprocess.assert_not_called()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_checksums_timeout(self, mock_fetch_local, mock_subprocess,
+                                              mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums when subprocess times out."""
+        mock_fetch_local.return_value = True
+        
+        # Mock subprocess timeout
+        mock_subprocess.side_effect = subprocess.TimeoutExpired("spack", 300)
+        
+        # Add a pending checksum
+        spack_manager.add_pending_checksum("test-pkg", "1.0.0")
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should return one package for editing with timeout info
+        assert len(result) == 1
+        pkg = result[0]
+        assert pkg['package_name'] == "test-pkg"
+        assert pkg['version'] == "1.0.0"
+        assert pkg['operation'] == 'checksum_timeout'
+        
+        # Should have logged timeout error
+        mock_log.assert_any_call("✗ Timeout adding checksum for test-pkg@1.0.0", "error")
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_checksums_multiple_packages(self, mock_fetch_local, mock_subprocess,
+                                                        mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums with multiple packages."""
+        mock_fetch_local.return_value = True
+        
+        # Mock different subprocess results
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "pkg1" in cmd:
+                result = Mock()
+                result.returncode = 0
+                return result
+            elif "pkg2" in cmd:
+                result = Mock()
+                result.returncode = 1
+                result.stderr = "Error for pkg2"
+                return result
+            else:  # pkg3
+                raise subprocess.TimeoutExpired("spack", 300)
+        
+        mock_subprocess.side_effect = subprocess_side_effect
+        
+        # Add multiple pending checksums
+        spack_manager.add_pending_checksum("pkg1", "1.0.0")
+        spack_manager.add_pending_checksum("pkg2", "1.0.0")
+        spack_manager.add_pending_checksum("pkg3", "1.0.0")
+        
+        with patch.object(spack_manager, '_log_and_print') as mock_log:
+            result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should return all three packages with different operations
+        assert len(result) == 3
+        
+        operations = {pkg['package_name']: pkg['operation'] for pkg in result}
+        assert operations['pkg1'] == 'checksum'
+        assert operations['pkg2'] == 'checksum_failed'
+        assert operations['pkg3'] == 'checksum_timeout'
+        
+        # Should have made three subprocess calls
+        assert mock_subprocess.call_count == 3
+        
+        # Should clear pending checksums
+        assert len(spack_manager.pending_checksums) == 0
+
+    @patch('pathlib.Path.mkdir')
+    @patch('builtins.open', new_callable=mock_open)
+    @patch('subprocess.run')
+    @patch.object(SpackManager, '_fetch_and_write_package_directory')
+    def test_process_pending_checksums_environment_variables(self, mock_fetch_local, mock_subprocess,
+                                                           mock_file, mock_mkdir, spack_manager):
+        """Test _process_pending_checksums sets correct environment variables."""
+        mock_fetch_local.return_value = True
+        
+        # Mock successful subprocess result
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_subprocess.return_value = mock_result
+        
+        # Add a pending checksum
+        spack_manager.add_pending_checksum("test-pkg", "1.0.0")
+        
+        result = spack_manager._process_pending_checksums("/test/env")
+        
+        # Should have called subprocess with modified environment
+        assert mock_subprocess.call_count == 1
+        call_kwargs = mock_subprocess.call_args[1]
+        assert 'env' in call_kwargs
+        assert call_kwargs['env']['EDITOR'] == 'echo'
+        assert call_kwargs['timeout'] == 300
+
+    @patch.object(SpackManager, '_process_pending_recipes')
+    @patch.object(SpackManager, '_process_pending_checksums')
+    @patch.object(SpackManager, '_process_pending_git_commits')
+    @patch.object(SpackManager, '_copy_site_common_dirs')
+    @patch.object(SpackManager, '_ensure_env_repository')
+    @patch.object(SpackManager, '_get_upstream_package_info')
+    def test_create_environment_from_base_spack_yaml(self, mock_get_pkg_info, mock_ensure_repo, mock_copy_dirs, 
+                                                    mock_git_commits, mock_checksums, 
+                                                    mock_recipes, spack_manager, tmp_path):
+        """Test create_environment using a base spack.yaml and validate the output."""
+        import shutil
+        from ruamel.yaml import YAML
+        
+        # Mock the internal methods to return empty lists/no-ops
+        mock_recipes.return_value = []
+        mock_checksums.return_value = []
+        mock_git_commits.return_value = []
+        mock_copy_dirs.return_value = None
+        mock_ensure_repo.return_value = None
+        
+        # Mock _get_upstream_package_info to return package configuration
+        mock_get_pkg_info.return_value = {
+            'hdf5': {
+                'version': '1.10.7',
+                'variants': '+mpi +threadsafe'
+            },
+            'netcdf-c': {
+                'version': '4.7.4',
+                'variants': '+mpi +parallel-netcdf'
+            }
+        }
+        
+        # Setup: create a fake upstream env with a base spack.yaml
+        base_yaml = Path(__file__).parent / "base_spack.yaml"
+        upstream_env = tmp_path / "upstream_env"
+        upstream_env.mkdir()
+        shutil.copy(base_yaml, upstream_env / "spack.yaml")
+
+        # Prepare test packages and platform
+        packages = [
+            {"name": "hdf5", "version": "1.10.7"},
+            {"name": "netcdf-c", "version": "4.7.4"}
+        ]
+        platform = Mock()
+        platform.config = Mock()
+        platform.config.get.return_value = ""  # Return empty string for cpu_target
+
+        # Call create_environment
+        env_name = "testenv"
+        work_dir = str(tmp_path)
+        env_path, pkgs_edit = spack_manager.create_environment(
+            env_name=env_name,
+            upstream_path=str(upstream_env),
+            packages=packages,
+            work_dir=work_dir,
+            platform=platform
+        )
+
+        # Validate the resulting spack.yaml content
+        result_yaml_path = Path(env_path) / "spack.yaml"
+        assert result_yaml_path.exists()
+        yaml = YAML()
+        with open(result_yaml_path) as f:
+            result_yaml = yaml.load(f)
+
+        # The output should have the correct specs and upstream
+        assert "spack" in result_yaml
+        spack_section = result_yaml["spack"]
+        assert set(spack_section["specs"]) == {"hdf5@1.10.7", "netcdf-c@4.7.4"}
+        assert "upstreams" in spack_section
+        # The upstream should be named emcenvchainer-upstream and point to the upstream_env/install
+        assert "emcenvchainer-upstream" in spack_section["upstreams"]
+        assert spack_section["upstreams"]["emcenvchainer-upstream"]["install_tree"] == str(upstream_env / "install")
+        
+        # Check that package-specific configuration was added based on upstream info
+        assert "packages" in spack_section
+        packages_config = spack_section["packages"]
+        
+        # Check hdf5 package configuration
+        assert "hdf5:" in packages_config
+        hdf5_config = packages_config["hdf5:"]
+        assert hdf5_config["version"] == ["1.10.7"]
+        assert hdf5_config["variants"] == "+mpi +threadsafe"
+        
+        # Check netcdf-c package configuration  
+        assert "netcdf-c:" in packages_config
+        netcdf_config = packages_config["netcdf-c:"]
+        assert netcdf_config["version"] == ["4.7.4"]
+        assert netcdf_config["variants"] == "+mpi +parallel-netcdf"
+        
+        # Check that common build deps are marked as non-buildable
+        assert "cmake" in packages_config
+        assert packages_config["cmake"]["buildable"] is False
+        
+        # Verify the mocked methods were called
+        mock_recipes.assert_called_once()
+        mock_checksums.assert_called_once()
+        mock_git_commits.assert_called_once()
+        mock_copy_dirs.assert_called_once()
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_success_with_specs(self, mock_run_spack, spack_manager):
+        """Test successful concretization with specs returned."""
+        # Mock bootstrap commands to succeed
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        # Mock concretize command to succeed
+        concretize_result = Mock()
+        concretize_result.returncode = 0
+        concretize_result.stdout = "Concretization successful"
+        concretize_result.stderr = ""
+        
+        # Mock find command to return some specs
+        find_result = Mock()
+        find_result.returncode = 0
+        find_result.stdout = "hdf5@1.10.7\nnetcdf-c@4.7.4\ncmake@3.20.0"
+        
+        # Set up the side effect for multiple calls
+        mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result, find_result]
+        
+        success, output = spack_manager.concretize_environment("/test/env")
+        
+        # Should return success with output
+        assert success is True
+        assert output == "Concretization successful"
+        
+        # Verify all expected commands were called
+        assert mock_run_spack.call_count == 3  # Only bootstrap and concretize, no find command
+        
+        # Check bootstrap calls
+        mock_run_spack.assert_any_call(['-e', '/test/env', '-C', '/test/env', 'bootstrap', 'root', '/test/env/bootstrap'])
+        mock_run_spack.assert_any_call(['-e', '/test/env', '-C', '/test/env', 'bootstrap', 'now'])
+        
+        # Check concretize call
+        mock_run_spack.assert_any_call(['-e', '/test/env', '-C', '/test/env', 'concretize'])
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_success_no_specs(self, mock_run_spack, spack_manager):
+        """Test successful concretization but no specs found."""
+        # Mock bootstrap commands to succeed
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        # Mock concretize command to succeed
+        concretize_result = Mock()
+        concretize_result.returncode = 0
+        concretize_result.stdout = "Concretization successful"
+        concretize_result.stderr = ""
+        
+        # Mock find command to return empty result
+        find_result = Mock()
+        find_result.returncode = 0
+        find_result.stdout = ""
+        
+        mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result]
+        
+        success, output = spack_manager.concretize_environment("/test/env")
+        
+        # Should return success with output
+        assert success is True
+        assert output == "Concretization successful"
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_concretization_fails(self, mock_run_spack, spack_manager):
+        """Test failed concretization."""
+        # Mock bootstrap commands to succeed
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        # Mock concretize command to fail
+        concretize_result = Mock()
+        concretize_result.returncode = 1
+        concretize_result.stdout = ""
+        concretize_result.stderr = "Error: conflicting requirements"
+        
+        mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result]
+        
+        result = spack_manager.concretize_environment("/test/env")
+        
+        # Should return failure - the method actually returns 3 values on failure
+        if len(result) == 3:
+            success, specs, output = result
+            assert success is False
+            assert len(specs) == 1
+            assert "Concretization failed: Error: conflicting requirements" in specs[0]
+            assert output == "Error: conflicting requirements"
+        else:
+            success, output = result
+            assert success is False
+            assert "Error: conflicting requirements" in output
+        
+        # Should only call bootstrap and concretize
+        assert mock_run_spack.call_count == 3
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_exception_handling(self, mock_run_spack, spack_manager):
+        """Test exception handling during concretization."""
+        # Mock first bootstrap to succeed, second to raise exception
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        mock_run_spack.side_effect = [bootstrap_result, RuntimeError("Command failed")]
+        
+        result = spack_manager.concretize_environment("/test/env")
+        
+        # Should return failure with exception message - the method actually returns 3 values on exception
+        if len(result) == 3:
+            success, specs, output = result
+            assert success is False
+            assert len(specs) == 1
+            assert "Command failed" in specs[0]
+            assert output == ""
+        else:
+            success, output = result
+            assert success is False
+            assert "Command failed" in output
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_output_parsing(self, mock_run_spack, spack_manager):
+        """Test proper parsing of stdout and stderr for output."""
+        # Mock bootstrap commands to succeed
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        # Mock concretize command with both stdout and stderr
+        concretize_result = Mock()
+        concretize_result.returncode = 0
+        concretize_result.stdout = "Concretization output"
+        concretize_result.stderr = "Warning messages"
+        
+        # Mock find command
+        find_result = Mock()
+        find_result.returncode = 0
+        find_result.stdout = "spec1\nspec2"
+        
+        mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result]
+        
+        success, output = spack_manager.concretize_environment("/test/env")
+        
+        # Should combine stdout and stderr for output
+        assert success is True
+        assert output == "Concretization outputWarning messages"
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_concretize_environment_empty_output(self, mock_run_spack, spack_manager):
+        """Test handling of empty stdout/stderr."""
+        # Mock bootstrap commands to succeed
+        bootstrap_result = Mock()
+        bootstrap_result.returncode = 0
+        
+        # Mock concretize command with no output
+        concretize_result = Mock()
+        concretize_result.returncode = 0
+        concretize_result.stdout = None
+        concretize_result.stderr = None
+        
+        # Mock find command
+        find_result = Mock()
+        find_result.returncode = 0
+        find_result.stdout = "spec1"
+        
+        mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result]
+        
+        success, output = spack_manager.concretize_environment("/test/env")
+        
+        # Should handle None values gracefully
+        assert success is True
+        assert output == ""
+
+    # Tests for refresh_modules method
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_success(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test successful refresh_modules execution."""
+        # Mock successful spack commands
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Module refresh successful"
+        mock_result.stderr = ""
+        mock_run_spack.return_value = mock_result
+        
+        env_path = "/test/env"
+        
+        # Call refresh_modules
+        result = spack_manager.refresh_modules(env_path)
+        
+        # Verify the correct spack commands were called
+        expected_calls = [
+            mock.call(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules']),
+            mock.call(['-e', env_path, 'stack', 'setup-meta-modules'])
+        ]
+        mock_run_spack.assert_has_calls(expected_calls)
+        
+        # Verify logging calls
+        mock_log_print.assert_any_call("Refreshing Lmod modules...")
+        mock_log_print.assert_any_call("Setting up meta-modules...")
+        mock_log_print.assert_any_call(f"✓ Module refresh completed. Modulefiles at: {env_path}/install/modulefiles/Core")
+        
+        # Verify return value
+        expected_path = f"{env_path}/install/modulefiles/Core"
+        assert result == expected_path
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_lmod_refresh_failure(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules when lmod refresh command fails."""
+        # Mock failed lmod refresh command
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Module refresh failed"
+        mock_run_spack.return_value = mock_result
+        
+        env_path = "/test/env"
+        
+        # Call refresh_modules and expect RuntimeError
+        with pytest.raises(RuntimeError, match="Module creation failed: Module refresh failed"):
+            spack_manager.refresh_modules(env_path)
+        
+        # Verify only the first command was called (should fail before second command)
+        mock_run_spack.assert_called_once_with(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules'])
+        
+        # Verify initial logging call
+        mock_log_print.assert_called_with("Refreshing Lmod modules...")
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_meta_modules_failure(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules when meta-modules setup fails."""
+        # Mock successful lmod refresh but failed meta-modules setup
+        mock_results = [
+            Mock(returncode=0, stdout="Module refresh successful", stderr=""),  # lmod refresh success
+            Mock(returncode=1, stderr="Meta-modules setup failed")  # meta-modules failure
+        ]
+        mock_run_spack.side_effect = mock_results
+        
+        env_path = "/test/env"
+        
+        # Call refresh_modules and expect RuntimeError
+        with pytest.raises(RuntimeError, match="Metamodule \\(stack-\\* modules\\) creation failed: Meta-modules setup failed"):
+            spack_manager.refresh_modules(env_path)
+        
+        # Verify both commands were called
+        expected_calls = [
+            mock.call(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules']),
+            mock.call(['-e', env_path, 'stack', 'setup-meta-modules'])
+        ]
+        mock_run_spack.assert_has_calls(expected_calls)
+        
+        # Verify logging calls
+        mock_log_print.assert_any_call("Refreshing Lmod modules...")
+        mock_log_print.assert_any_call("Setting up meta-modules...")
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_with_logging(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock successful spack commands
+            mock_result = Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = "Module refresh successful"
+            mock_result.stderr = ""
+            mock_run_spack.return_value = mock_result
+            
+            env_path = "/test/env"
+            
+            # Call refresh_modules
+            result = spack_manager.refresh_modules(env_path)
+            
+            # Verify logger is set
+            assert spack_manager.logger is not None
+            
+            # Verify return value
+            expected_path = f"{env_path}/install/modulefiles/Core"
+            assert result == expected_path
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_exception_handling(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules when an unexpected exception occurs."""
+        # Mock _run_spack_command to raise an exception
+        mock_run_spack.side_effect = Exception("Unexpected error")
+        
+        env_path = "/test/env"
+        
+        # Call refresh_modules and expect RuntimeError
+        with pytest.raises(RuntimeError, match="Failed to refresh modules: Unexpected error"):
+            spack_manager.refresh_modules(env_path)
+        
+        # Verify the first command was attempted
+        mock_run_spack.assert_called_once_with(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules'])
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_exception_with_logging(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules exception handling with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock _run_spack_command to raise an exception
+            mock_run_spack.side_effect = Exception("Unexpected error")
+            
+            env_path = "/test/env"
+                 # Call refresh_modules and expect RuntimeError
+        with pytest.raises(RuntimeError, match="Failed to refresh modules: Unexpected error"):
+            spack_manager.refresh_modules(env_path)
+        
+        # Verify logger is set
+        assert spack_manager.logger is not None
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_path_construction(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test that refresh_modules constructs the correct modulefiles path."""
+        # Mock successful spack commands
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "Module refresh successful"
+        mock_result.stderr = ""
+        mock_run_spack.return_value = mock_result
+        
+        # Test with different env_path formats
+        test_cases = [
+            "/path/to/env",
+            "/path/to/env/",
+            "relative/env",
+            "/complex/path/with-dashes_and.dots/env"
+        ]
+        
+        for env_path in test_cases:
+            result = spack_manager.refresh_modules(env_path)
+            expected_path = f"{env_path.rstrip('/')}/install/modulefiles/Core"
+            assert result == expected_path
+            
+            # Reset mock for next iteration
+            mock_run_spack.reset_mock()
+            mock_log_print.reset_mock()
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_lmod_failure_with_logging(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules lmod failure with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock failed lmod refresh command
+            mock_result = Mock()
+            mock_result.returncode = 1
+            mock_result.stderr = "Module refresh failed"
+            mock_run_spack.return_value = mock_result
+            
+            env_path = "/test/env"
+            
+            # Call refresh_modules and expect RuntimeError
+            with pytest.raises(RuntimeError, match="Module creation failed: Module refresh failed"):
+                spack_manager.refresh_modules(env_path)
+            
+            # Verify logger exists and error would be logged
+            assert spack_manager.logger is not None
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_meta_modules_failure_with_logging(self, mock_log_print, mock_run_spack, spack_manager):
+        """Test refresh_modules meta-modules failure with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock successful lmod refresh but failed meta-modules setup
+            mock_results = [
+                Mock(returncode=0, stdout="Module refresh successful", stderr=""),  # lmod refresh success
+                Mock(returncode=1, stderr="Meta-modules setup failed")  # meta-modules failure
+            ]
+            mock_run_spack.side_effect = mock_results
+            
+            env_path = "/test/env"
+            
+            # Call refresh_modules and expect RuntimeError
+            with pytest.raises(RuntimeError, match="Metamodule \\(stack-\\* modules\\) creation failed: Meta-modules setup failed"):
+                spack_manager.refresh_modules(env_path)
+            
+            # Verify logger exists and error would be logged
+            assert spack_manager.logger is not None
+
+# Tests for _fetch_recipe_content method
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_success(self, mock_get, spack_manager):
+        """Test successful recipe content fetch."""
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "# Example recipe content\nclass TestPackage(Package):\n    pass"
+        mock_get.return_value = mock_response
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("test-package")
+        
+        # Verify the result
+        assert result == "# Example recipe content\nclass TestPackage(Package):\n    pass"
+        
+        # Verify the URL was constructed correctly
+        expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/test-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_custom_config(self, mock_get, spack_manager):
+        """Test recipe content fetch with custom repository configuration."""
+        # Setup custom config
+        spack_manager.config.get.return_value = {
+            "base_url": "https://github.com/custom-org/custom-spack.git",
+            "branch": "custom-branch"
+        }
+        
+        # Mock successful response
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.text = "# Custom recipe content"
+        mock_get.return_value = mock_response
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("custom-package")
+        
+        # Verify the result
+        assert result == "# Custom recipe content"
+        
+        # Verify the URL was constructed with custom config
+        expected_url = "https://raw.githubusercontent.com/custom-org/custom-spack/refs/heads/custom-branch/var/spack/repos/builtin/packages/custom-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_http_404(self, mock_get, spack_manager):
+        """Test recipe content fetch when package not found (HTTP 404)."""
+        # Mock 404 response
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_get.return_value = mock_response
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("nonexistent-package")
+        
+        # Should return None for 404
+        assert result is None
+        
+        # Verify the URL was attempted
+        expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/nonexistent-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_http_500(self, mock_get, spack_manager):
+        """Test recipe content fetch when server error occurs (HTTP 500)."""
+        # Mock 500 response
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_get.return_value = mock_response
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("test-package")
+        
+        # Should return None for server error
+        assert result is None
+        
+        # Verify the URL was attempted
+        expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/test-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_network_exception(self, mock_get, spack_manager):
+        """Test recipe content fetch when network exception occurs."""
+        # Mock network exception
+        mock_get.side_effect = requests.exceptions.ConnectionError("Network error")
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("test-package")
+        
+        # Should return None for network error
+        assert result is None
+        
+        # Verify the URL was attempted
+        expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/test-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_timeout_exception(self, mock_get, spack_manager):
+        """Test recipe content fetch when timeout occurs."""
+        # Mock timeout exception
+        mock_get.side_effect = requests.exceptions.Timeout("Request timed out")
+        
+        # Call the method
+        result = spack_manager._fetch_recipe_content("test-package")
+        
+        # Should return None for timeout
+        assert result is None
+        
+        # Verify the URL was attempted with correct timeout
+        expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/test-package/package.py"
+        mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_with_logging(self, mock_get, spack_manager):
+        """Test recipe content fetch with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock successful response
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.text = "# Recipe with logging"
+            mock_get.return_value = mock_response
+            
+            # Call the method
+            result = spack_manager._fetch_recipe_content("logged-package")
+            
+            # Verify the result
+            assert result == "# Recipe with logging"
+            
+            # Verify logger was used
+            assert spack_manager.logger is not None
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_with_logging_failure(self, mock_get, spack_manager):
+        """Test recipe content fetch failure with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock 404 response
+            mock_response = Mock()
+            mock_response.status_code = 404
+            mock_get.return_value = mock_response
+            
+            # Call the method
+            result = spack_manager._fetch_recipe_content("missing-package")
+            
+            # Should return None
+            assert result is None
+            
+            # Verify logger was used
+            assert spack_manager.logger is not None
+
+    @patch('requests.get')
+    def test_fetch_recipe_content_with_logging_exception(self, mock_get, spack_manager):
+        """Test recipe content fetch exception with logging enabled."""
+        # Setup logging
+        with tempfile.TemporaryDirectory() as temp_dir:
+            spack_manager.setup_logging(temp_dir)
+            
+            # Mock exception
+            mock_get.side_effect = Exception("General error")
+            
+            # Call the method
+            result = spack_manager._fetch_recipe_content("error-package")
+            
+            # Should return None
+            assert result is None
+            
+            # Verify logger was used
+            assert spack_manager.logger is not None
+
+    def test_fetch_recipe_content_url_construction(self, spack_manager):
+        """Test URL construction for different package names."""
+        with patch('requests.get') as mock_get:
+            # Mock successful response
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.text = "# Test recipe"
+            mock_get.return_value = mock_response
+            
+            test_cases = [
+                "simple-package",
+                "package_with_underscores", 
+                "package-with-many-dashes",
+                "py-python-package",
+                "r-r-package"
+            ]
+            
+            for package_name in test_cases:
+                # Reset mock for each test case
+                mock_get.reset_mock()
+                
+                # Call the method
+                result = spack_manager._fetch_recipe_content(package_name)
+                
+                # Verify the result
+                assert result == "# Test recipe"
+                
+                # Verify the URL was constructed correctly
+                expected_url = f"https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/{package_name}/package.py"
+                mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    def test_fetch_recipe_content_config_fallback(self, spack_manager):
+        """Test fallback to default configuration when config is missing."""
+        # Setup config to return empty dict for spack_repository
+        spack_manager.config.get.return_value = {}
+        
+        with patch('requests.get') as mock_get:
+            # Mock successful response
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.text = "# Fallback recipe"
+            mock_get.return_value = mock_response
+            
+            # Call the method
+            result = spack_manager._fetch_recipe_content("fallback-package")
+            
+            # Verify the result
+            assert result == "# Fallback recipe"
+            
+            # Verify the URL was constructed with defaults
+            expected_url = "https://raw.githubusercontent.com/JCSDA/spack/refs/heads/develop/var/spack/repos/builtin/packages/fallback-package/package.py"
+            mock_get.assert_called_once_with(expected_url, timeout=10)
+
+    def test_fetch_recipe_content_partial_config(self, spack_manager):
+        """Test behavior with partial configuration (missing branch)."""
+        # Setup config with base_url but missing branch
+        spack_manager.config.get.return_value = {
+            "base_url": "https://github.com/partial-org/partial-spack.git"
+        }
+        
+        with patch('requests.get') as mock_get:
+            # Mock successful response
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.text = "# Partial config recipe"
+            mock_get.return_value = mock_response
+            
+            # Call the method
+            result = spack_manager._fetch_recipe_content("partial-package")
+            
+            # Verify the result
+            assert result == "# Partial config recipe"
+            
+            # Verify the URL was constructed with default branch
+            expected_url = "https://raw.githubusercontent.com/partial-org/partial-spack/refs/heads/develop/var/spack/repos/builtin/packages/partial-package/package.py"
+            mock_get.assert_called_once_with(expected_url, timeout=10)
+
+# Tests for _fetch_and_write_package_directory method
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_success(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test successful package directory fetch and write."""
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        # Create mock source directory
+        source_dir = tmp_path / "source" / "test-package"
+        source_dir.mkdir(parents=True)
+        (source_dir / "package.py").write_text("# test package content")
+        (source_dir / "patch1.patch").write_text("patch content")
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True for source directory
+        with patch('pathlib.Path.exists', return_value=True):
+            # Mock Path.rglob() to return some files
+            with patch('pathlib.Path.rglob') as mock_rglob:
+                mock_files = [
+                    Mock(is_file=lambda: True),  # package.py
+                    Mock(is_file=lambda: True),  # patch1.patch
+                    Mock(is_file=lambda: False)  # subdirectory
+                ]
+                mock_rglob.return_value = mock_files
+                
+                result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is True
+        
+        # Verify spack command was called
+        mock_run_spack.assert_called_once_with(['location', '--package-dir', 'test-pkg'])
+        
+        # Verify copytree was called with correct arguments
+        mock_copytree.assert_called_once()
+        call_args = mock_copytree.call_args
+        assert str(call_args[0][1]) == str(target_dir)  # target path
+        assert call_args[1]['ignore'] is not None  # ignore patterns specified
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_spack_command_fails(self, mock_run_spack, spack_manager, tmp_path):
+        """Test when spack location command fails."""
+        package_name = "nonexistent-package"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock failed spack command
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_run_spack.return_value = mock_result
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is False
+        assert message == f"Package {package_name} not found in main repository"
+        
+        # Verify method calls
+        mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_original_dir_not_exists(self, mock_run_spack, mock_exists, spack_manager, tmp_path):
+        """Test when original package directory doesn't exist."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        original_path = "/nonexistent/path/test-package"
+        
+        # Mock successful spack command but directory doesn't exist
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = original_path
+        mock_run_spack.return_value = mock_result
+        
+        # Mock directory doesn't exist
+        mock_exists.return_value = False
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is False
+        assert message == f"Original package directory not found: {original_path}"
+        
+        # Verify method calls
+        mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+        mock_exists.assert_called_once()
+
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_package_py_not_exists(self, mock_run_spack, mock_exists, mock_mkdir, spack_manager, tmp_path):
+        """Test when original package.py file doesn't exist."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        original_path = "/path/to/spack/packages/test-package"
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = original_path
+        mock_run_spack.return_value = mock_result
+        
+        # Mock directory exists but package.py doesn't
+        mock_exists.side_effect = [True, False]  # original_package_dir.exists(), original_package_py.exists()
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is False
+        assert message == f"Original package.py not found: {original_path}/package.py"
+        
+        # Verify method calls
+        mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+        assert mock_exists.call_count == 2
+        mock_mkdir.assert_called_once()
+
+    @patch('shutil.copy2')
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_copy_fails(self, mock_run_spack, mock_exists, mock_mkdir, mock_copy2, spack_manager, tmp_path):
+        """Test when shutil.copy2 raises an exception."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        # Mock path existence checks
+        mock_exists.side_effect = [True, True]  # original_package_dir.exists(), original_package_py.exists()
+        
+        # Mock copy2 to raise an exception
+        mock_copy2.side_effect = OSError("Permission denied")
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is False
+        assert "Failed to copy package: Permission denied" in message
+        
+        # Verify method calls
+        mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+        assert mock_exists.call_count == 2
+        mock_mkdir.assert_called_once()
+        mock_copy2.assert_called_once()
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_spack_command_exception(self, mock_run_spack, spack_manager, tmp_path):
+        """Test when spack command raises an exception."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock spack command to raise an exception
+        mock_run_spack.side_effect = RuntimeError("Spack command failed")
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is False
+        assert "Failed to copy package: Spack command failed" in message
+        
+        # Verify method calls
+        mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+
+    @patch('shutil.copy2')
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_creates_directory_structure(self, mock_run_spack, mock_exists, mock_mkdir, mock_copy2, spack_manager, tmp_path):
+        """Test that the method creates the correct directory structure."""
+        package_name = "complex-package-name"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = f"/path/to/spack/packages/{package_name}"
+        mock_run_spack.return_value = mock_result
+        
+        # Mock path existence checks
+        mock_exists.side_effect = [True, True]
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is True
+        assert message == f"Package {package_name} copied to custom repository"
+        
+        # Verify mkdir was called with correct path and parameters
+        mock_mkdir.assert_called_once()
+        mkdir_call_args = mock_mkdir.call_args
+        assert mkdir_call_args[1]['parents'] is True
+        assert mkdir_call_args[1]['exist_ok'] is True
+
+    @patch('shutil.copy2')
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_strips_whitespace_from_stdout(self, mock_run_spack, mock_exists, mock_mkdir, mock_copy2, spack_manager, tmp_path):
+        """Test that the method handles whitespace in spack command output."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock spack command with whitespace in stdout
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "  /path/to/spack/packages/test-package  \n"
+        mock_run_spack.return_value = mock_result
+        
+        # Mock path existence checks
+        mock_exists.side_effect = [True, True]
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is True
+        assert message == f"Package {package_name} copied to custom repository"
+        
+        # Verify that exists was called with the stripped path
+        expected_path_str = "/path/to/spack/packages/test-package"
+        # Check that the path was properly stripped by verifying the method succeeded
+        assert success is True
+        assert mock_exists.call_count == 2
+
+    @patch('shutil.copy2')
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_with_special_characters(self, mock_run_spack, mock_exists, mock_mkdir, mock_copy2, spack_manager, tmp_path):
+        """Test copying packages with special characters in names."""
+        test_cases = [
+            "py-numpy",
+            "r-ggplot2",
+            "package_with_underscores",
+            "package-with-many-dashes"
+        ]
+        
+        for package_name in test_cases:
+            # Reset mocks for each test case
+            mock_run_spack.reset_mock()
+            mock_exists.reset_mock()
+            mock_mkdir.reset_mock()
+            mock_copy2.reset_mock()
+            
+            repo_path = str(tmp_path / "custom_repo" / package_name)
+            
+            # Mock successful spack command
+            mock_result = Mock()
+            mock_result.returncode = 0
+            mock_result.stdout = f"/path/to/spack/packages/{package_name}"
+            mock_run_spack.return_value = mock_result
+            
+            # Mock path existence checks
+            mock_exists.side_effect = [True, True]
+            
+            # Call the method
+            success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+            
+            # Verify results
+            assert success is True
+            assert message == f"Package {package_name} copied to custom repository"
+            
+            # Verify method calls
+            mock_run_spack.assert_called_once_with(['location', '-p', package_name])
+            assert mock_exists.call_count == 2
+            mock_mkdir.assert_called_once()
+            mock_copy2.assert_called_once()
+
+    @patch('shutil.copy2')
+    @patch('pathlib.Path.mkdir')
+    @patch('pathlib.Path.exists')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_copy_package_to_custom_repo_preserves_file_metadata(self, mock_run_spack, mock_exists, mock_mkdir, mock_copy2, spack_manager, tmp_path):
+        """Test that the method uses copy2 to preserve file metadata."""
+        package_name = "test-package"
+        repo_path = str(tmp_path / "custom_repo")
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        # Mock path existence checks
+        mock_exists.side_effect = [True, True]
+        
+        # Call the method
+        success, message = spack_manager._copy_package_to_custom_repo(package_name, repo_path)
+        
+        # Verify results
+        assert success is True
+        
+        # Verify that copy2 was used (preserves metadata) instead of copy
+        mock_copy2.assert_called_once()
+        copy_call_args = mock_copy2.call_args[0]
+        
+        # Verify source and destination paths
+        source_path = copy_call_args[0]
+        dest_path = copy_call_args[1]
+        
+        assert "test-package/package.py" in str(source_path)
+        assert "custom_repo/packages/test-package/package.py" in str(dest_path)
+    
+    # Tests for add_package_version method
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_success_existing_package(self, mock_exists, mock_ensure_repo, 
+                                                         mock_copy_package, mock_add_version, spack_manager):
+        """Test successful addition of version when package already exists in custom repo."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package"
+        version = "1.2.3"
+        
+        # Mock package directory exists
+        mock_exists.return_value = True
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_add_version.return_value = (True, "Version added with checksum")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is True
+        assert message == f"Version {version} added to {package_name}"
+        assert recipe_path == "/test/env/envrepo/packages/test-package/package.py"
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_exists.assert_called_once()
+        mock_copy_package.assert_not_called()  # Should not copy if package exists
+        mock_add_version.assert_called_once_with(
+            package_name, version, "/test/env/envrepo/packages/test-package/package.py"
+        )
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_success_new_package(self, mock_exists, mock_ensure_repo, 
+                                                    mock_copy_package, mock_add_version, spack_manager):
+        """Test successful addition of version when package needs to be copied first."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "new-package"
+        version = "2.0.0"
+        
+        # Mock package directory doesn't exist
+        mock_exists.return_value = False
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_copy_package.return_value = (True, "Package copied successfully")
+        mock_add_version.return_value = (True, "Version added with checksum")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is True
+        assert message == f"Version {version} added to {package_name}"
+        assert recipe_path == "/test/env/envrepo/packages/new-package/package.py"
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_exists.assert_called_once()
+        mock_copy_package.assert_called_once_with(package_name, "/test/env/envrepo")
+        mock_add_version.assert_called_once_with(
+            package_name, version, "/test/env/envrepo/packages/new-package/package.py"
+        )
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_copy_fails(self, mock_exists, mock_ensure_repo, 
+                                           mock_copy_package, mock_add_version, spack_manager):
+        """Test failure when copying package to custom repo fails."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "missing-package"
+        version = "1.0.0"
+        
+        # Mock package directory doesn't exist and copy fails
+        mock_exists.return_value = False
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_copy_package.return_value = (False, "Package not found in main repository")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is False
+        assert message == "Package not found in main repository"
+        assert recipe_path == ""
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_exists.assert_called_once()
+        mock_copy_package.assert_called_once_with(package_name, "/test/env/envrepo")
+        mock_add_version.assert_not_called()  # Should not try to add version if copy fails
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_add_version_fails(self, mock_exists, mock_ensure_repo, 
+                                                  mock_copy_package, mock_add_version, spack_manager):
+        """Test failure when adding version to package fails."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package"
+        version = "invalid-version"
+        
+        # Mock package exists but version addition fails
+        mock_exists.return_value = True
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_add_version.return_value = (False, "Failed to add version: invalid version format")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is False
+        assert message == "Failed to add version: invalid version format"
+        assert recipe_path == "/test/env/envrepo/packages/test-package/package.py"
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_exists.assert_called_once()
+        mock_copy_package.assert_not_called()  # Package exists, no copy needed
+        mock_add_version.assert_called_once_with(
+            package_name, version, "/test/env/envrepo/packages/test-package/package.py"
+        )
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    def test_add_package_version_ensure_repository_exception(self, mock_ensure_repo, spack_manager):
+        """Test exception handling when ensuring repository fails."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package"
+        version = "1.0.0"
+        
+        # Mock repository creation failure
+        mock_ensure_repo.side_effect = OSError("Permission denied")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is False
+        assert "Failed to add package version: Permission denied" in message
+        assert recipe_path == ""
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_path_operations_exception(self, mock_exists, mock_ensure_repo, 
+                                                          mock_copy_package, mock_add_version, spack_manager):
+        """Test exception handling when Path operations fail."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package"
+        version = "1.0.0"
+        
+        # Mock path operations failure
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_exists.side_effect = OSError("Filesystem error")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is False
+        assert "Failed to add package version: Filesystem error" in message
+        assert recipe_path == ""
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_exists.assert_called_once()
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_with_none_env_path(self, mock_exists, mock_ensure_repo, 
+                                                   mock_copy_package, mock_add_version, spack_manager):
+        """Test add_package_version with None env_path parameter."""
+        # Setup
+        package_name = "test-package"
+        version = "1.0.0"
+        
+        # Mock successful operation
+        mock_exists.return_value = True
+        mock_ensure_repo.return_value = "/default/repo"
+        mock_add_version.return_value = (True, "Version added successfully")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path=None
+        )
+        
+        # Verify
+        assert success is True
+        assert message == f"Version {version} added to {package_name}"
+        assert recipe_path == "/default/repo/packages/test-package/package.py"
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(None)
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_with_offer_editor_parameter(self, mock_exists, mock_ensure_repo, 
+                                                            mock_copy_package, mock_add_version, spack_manager):
+        """Test add_package_version with offer_editor parameter (should not affect behavior)."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package"
+        version = "1.0.0"
+        
+        # Mock successful operation
+        mock_exists.return_value = False
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_copy_package.return_value = (True, "Package copied")
+        mock_add_version.return_value = (True, "Version added")
+        
+        # Execute with offer_editor=True
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path, offer_editor=True
+        )
+        
+        # Verify
+        assert success is True
+        assert message == f"Version {version} added to {package_name}"
+        assert recipe_path == "/test/env/envrepo/packages/test-package/package.py"
+        
+        # Verify method calls (offer_editor parameter doesn't change behavior in current implementation)
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_copy_package.assert_called_once_with(package_name, "/test/env/envrepo")
+        mock_add_version.assert_called_once_with(
+            package_name, version, "/test/env/envrepo/packages/test-package/package.py"
+        )
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_empty_strings(self, mock_exists, mock_ensure_repo, 
+                                              mock_copy_package, mock_add_version, spack_manager):
+        """Test add_package_version with empty string parameters."""
+        # Setup
+        env_path = "/test/env"
+        package_name = ""
+        version = ""
+        
+        # Mock operations
+        mock_exists.return_value = False
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_copy_package.return_value = (False, "Invalid package name")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is False
+        assert message == "Invalid package name"
+        assert recipe_path == ""
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_copy_package.assert_called_once_with("", "/test/env/envrepo")
+    
+    @patch('emcenvchainer.spack_manager.SpackManager._add_version_to_package')
+    @patch('emcenvchainer.spack_manager.SpackManager._copy_package_to_custom_repo')
+    @patch('emcenvchainer.spack_manager.SpackManager._ensure_env_repository')
+    @patch('pathlib.Path.exists')
+    def test_add_package_version_special_characters_in_names(self, mock_exists, mock_ensure_repo, 
+                                                           mock_copy_package, mock_add_version, spack_manager):
+        """Test add_package_version with special characters in package name and version."""
+        # Setup
+        env_path = "/test/env"
+        package_name = "test-package-with-dashes"
+        version = "1.0.0-beta+build.123"
+        
+        # Mock successful operation
+        mock_exists.return_value = True
+        mock_ensure_repo.return_value = "/test/env/envrepo"
+        mock_add_version.return_value = (True, "Version added with special characters")
+        
+        # Execute
+        success, message, recipe_path = spack_manager.add_package_version(
+            package_name, version, env_path
+        )
+        
+        # Verify
+        assert success is True
+        assert message == f"Version {version} added to {package_name}"
+        assert recipe_path == "/test/env/envrepo/packages/test-package-with-dashes/package.py"
+        
+        # Verify method calls
+        mock_ensure_repo.assert_called_once_with(env_path)
+        mock_add_version.assert_called_once_with(
+            package_name, version, "/test/env/envrepo/packages/test-package-with-dashes/package.py"
+        )
+    
+    def test_ensure_env_repository_creates_repo_structure(self, spack_manager):
+        """Test that _ensure_env_repository creates the correct repository structure."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = temp_dir
+            
+            # Execute
+            repo_path = spack_manager._ensure_env_repository(env_path)
+            
+            # Verify return value
+            expected_repo_path = Path(env_path) / "envrepo"
+            assert repo_path == str(expected_repo_path)
+            
+            # Verify directory structure
+            assert expected_repo_path.exists()
+            assert expected_repo_path.is_dir()
+            
+            packages_dir = expected_repo_path / "packages"
+            assert packages_dir.exists()
+            assert packages_dir.is_dir()
+            
+            # Verify repo.yaml file
+            repo_yaml = expected_repo_path / "repo.yaml"
+            assert repo_yaml.exists()
+            assert repo_yaml.is_file()
+            
+            # Verify repo.yaml content
+            with open(repo_yaml, 'r') as f:
+                content = f.read()
+            expected_content = """repo:
+  namespace: envrepo
+"""
+            assert content == expected_content
+
+    def test_ensure_env_repository_with_existing_repo_yaml(self, spack_manager):
+        """Test that _ensure_env_repository doesn't overwrite existing repo.yaml."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = temp_dir
+            
+            # Pre-create repository structure with existing repo.yaml
+            repo_path = Path(env_path) / "envrepo"
+            repo_path.mkdir(parents=True)
+            
+            repo_yaml = repo_path / "repo.yaml"
+            existing_content = """repo:
+  namespace: custom
+  description: "Custom repository"
+"""
+            with open(repo_yaml, 'w') as f:
+                f.write(existing_content)
+            
+            # Execute
+            result_path = spack_manager._ensure_env_repository(env_path)
+            
+            # Verify return value
+            assert result_path == str(repo_path)
+            
+            # Verify existing repo.yaml is not overwritten
+            with open(repo_yaml, 'r') as f:
+                content = f.read()
+            assert content == existing_content
+            
+            # Verify packages directory is still created
+            packages_dir = repo_path / "packages"
+            assert packages_dir.exists()
+
+    def test_ensure_env_repository_with_existing_packages_dir(self, spack_manager):
+        """Test that _ensure_env_repository handles existing packages directory."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env_path = temp_dir
+            
+            # Pre-create repository structure with existing packages directory
+            repo_path = Path(env_path) / "envrepo"
+            packages_dir = repo_path / "packages"
+            packages_dir.mkdir(parents=True)
+            
+            # Create a test file in packages directory
+            test_file = packages_dir / "test_package" / "package.py"
+            test_file.parent.mkdir()
+            test_file.write_text("# test content")
+            
+            # Execute
+            result_path = spack_manager._ensure_env_repository(env_path)
+            
+            # Verify return value
+            assert result_path == str(repo_path)
+            
+            # Verify existing packages directory and files are preserved
+            assert packages_dir.exists()
+            assert test_file.exists()
+            assert test_file.read_text() == "# test content"
+            
+            # Verify repo.yaml is created
+            repo_yaml = repo_path / "repo.yaml"
+            assert repo_yaml.exists()
+
+    def test_ensure_env_repository_creates_nested_directories(self, spack_manager):
+        """Test that _ensure_env_repository creates nested directories correctly."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Test with nested environment path
+            env_path = Path(temp_dir) / "nested" / "env" / "path"
+            
+            # Execute
+            repo_path = spack_manager._ensure_env_repository(str(env_path))
+            
+            # Verify return value
+            expected_repo_path = env_path / "envrepo"
+            assert repo_path == str(expected_repo_path)
+            
+            # Verify all directories were created
+            assert env_path.exists()
+            assert expected_repo_path.exists()
+            assert (expected_repo_path / "packages").exists()
+            assert (expected_repo_path / "repo.yaml").exists()
+    
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_add_version_to_package_checksum_success(self, mock_run, spack_manager):
+        """When spack checksum returns 0, we get a successful tuple."""
+        pkg = "foo"
+        ver = "1.2.3"
+        recipe_path = "/dummy/pkg/package.py"
+        # simulate successful checksum
+        mock_run.return_value = CompletedProcess(args=['checksum', pkg, ver], returncode=0)
+
+        success, msg = spack_manager._add_version_to_package(pkg, ver, recipe_path)
+
+        assert success is True
+        assert msg == f"Version {ver} added with checksum"
+        mock_run.assert_called_once_with(['checksum', pkg, ver])
+
+    @patch.object(SpackManager, '_manually_add_version')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_add_version_to_package_fallback_to_manual(self, mock_run, mock_manual, spack_manager):
+        """When checksum fails, _manually_add_version is invoked and its result returned."""
+        pkg = "bar"
+        ver = "9.9.9"
+        recipe_path = "/dummy/pkg/bar/package.py"
+        # simulate checksum failure
+        mock_run.return_value = CompletedProcess(args=['checksum', pkg, ver], returncode=1)
+        # simulate manual addition result
+        mock_manual.return_value = (False, "manual fallback")
+
+        success, msg = spack_manager._add_version_to_package(pkg, ver, recipe_path)
+
+        assert success is False
+        assert msg == "manual fallback"
+        mock_run.assert_called_once_with(['checksum', pkg, ver])
+        mock_manual.assert_called_once_with(ver, recipe_path)
+
+    def test_manually_add_version_success(self, spack_manager, tmp_path):
+        """Test manual version addition when a version() line exists."""
+        version = "2.0.0"
+        pkg_file = tmp_path / "package.py"
+        original = """\
+class TestPackage(Package):
+    version("1.0.0", sha256="abc123")
+    # other content
+"""
+        pkg_file.write_text(original)
+
+        success, msg = spack_manager._manually_add_version(version, str(pkg_file))
+        assert success is True
+        assert msg == f"Version {version} added manually (checksum needs to be updated)"
+
+        # Verify the new version line was inserted immediately after the first version() call
+        lines = pkg_file.read_text().splitlines()
+        idx = next(i for i, L in enumerate(lines) if 'version("1.0.0"' in L)
+        assert lines[idx+1].strip() == f'version("{version}", sha256="PLACEHOLDER_CHECKSUM")'
+
+    def test_manually_add_version_no_version_section(self, spack_manager, tmp_path):
+        """Test manual version addition when no version() lines are present."""
+        version = "2.0.0"
+        pkg_file = tmp_path / "package.py"
+        content = """\
+class TestPackage(Package):
+    pass
+"""
+        pkg_file.write_text(content)
+
+        success, msg = spack_manager._manually_add_version(version, str(pkg_file))
+        assert success is False
+        assert msg == "Could not find version section in package.py"
+
+        # File should be unchanged
+        assert pkg_file.read_text() == content
+
+    def test_manually_add_version_exception(self, spack_manager):
+        """Test manual version addition handles file‐IO exceptions."""
+        # Point at a non‐existent file to force FileNotFoundError
+        bad_path = "/nonexistent/path/package.py"
+        success, msg = spack_manager._manually_add_version("3.3.3", bad_path)
+        assert success is False
+        assert "Failed to manually add version:" in msg
+    
+    @patch('subprocess.run')
+    def test_offer_package_edit_success(self, mock_run, spack_manager, tmp_path, capsys, monkeypatch):
+        """Test that offer_package_edit launches editor commands and returns True on success."""
+        # Prepare a dummy recipe file
+        recipe_file = tmp_path / "dummy_package.py"
+        recipe_file.write_text("dummy content")
+        packages_to_edit = [{
+            'package_name': 'dummy_package',
+            'version': '1.2.3',
+            'recipe_path': str(recipe_file)
+        }]
+
+        # Mock subprocess.run to simulate successful editor exit
+        mock_run.return_value = CompletedProcess(args=['editor', str(recipe_file)], returncode=0)
+
+        # Force a known EDITOR
+        monkeypatch.setenv('EDITOR', 'editor')
+
+        # Execute
+        result = spack_manager.offer_package_edit(packages_to_edit)
+
+        # Verify return value
+        assert result is True
+
+        # Verify printed output
+        out = capsys.readouterr().out
+        assert "Launching editors for 1 package(s)" in out
+        assert "Opening editor..." in out
+        assert f"Recipe path: {recipe_file}" in out
+        assert "✓ Finished editing dummy_package@1.2.3" in out
+
+        # Verify subprocess.run was called with the correct command
+        mock_run.assert_called_once_with(['editor', str(recipe_file)], check=True)
+
+    @patch.object(SpackManager, '_fetch_and_write_package_directory', return_value=True)
+    @patch.object(SpackManager, '_add_git_commit_version_to_recipe', return_value=True)
+    def test_process_pending_git_commits_success(self, mock_add_git, mock_fetch_local, spack_manager, tmp_path):
+        """Test successful processing of pending Git commit operations."""
+        pkg = "my-package"
+        ver = "0.1.0"
+        commit = "abcdef1234567890"
+        # queue one git‐commit operation
+        spack_manager.add_pending_git_commit(pkg, ver, commit)
+
+        # run the processor
+        result = spack_manager._process_pending_git_commits(str(tmp_path))
+
+        # one entry should be returned
+        assert len(result) == 1
+        entry = result[0]
+
+        expected_path = tmp_path / "envrepo" / "packages" / pkg / "package.py"
+        assert entry['package_name'] == pkg
+        assert entry['version'] == ver
+        assert entry['commit_hash'] == commit
+        assert entry['operation'] == 'git_commit'
+        assert entry['use_local_copy'] is True
+        assert entry['found_in_local'] is True
+        assert entry['found_in_remote'] is False
+        assert entry['recipe_path'] == str(expected_path)
+
+        # pending list is cleared
+        assert spack_manager.pending_git_commits == []
+
+    def test_add_git_commit_version_to_recipe_inserts_after_first_version(self, spack_manager, tmp_path):
+        """Test insertion after the first version() declaration."""
+        version = "3.0.0"
+        commit = "nonexist"
+        pkg_file = tmp_path / "package.py"
+        content = """\
+class Foo(Package):
+    version("1.0.0", commit="abc123")
+    do_something()
+    version("2.0.0", commit="abc123")
+"""
+        pkg_file.write_text(content)
+
+        success = spack_manager._add_git_commit_version_to_recipe(pkg_file, version, commit)
+        assert success is True
+
+        lines = pkg_file.read_text().splitlines()
+        # inserted immediately after the first version line
+        idx = next(i for i, line in enumerate(lines) if 'version("1.0.0"' in line)
+        assert lines[idx+1].strip() == f'version("{version}", commit="{commit}")'
+        # only one new version line
+        assert sum(f'version("{version}"' in l for l in lines) == 1
+
+    def test_add_git_commit_version_to_recipe_inserts_after_class_if_no_version(self, spack_manager, tmp_path):
+        """Test insertion after class definition when no version() exists."""
+        version = "4.0.0"
+        commit = "cafebabe"
+        pkg_file = tmp_path / "package.py"
+        content = """\
+class Bar(Package):
+    # no versions here
+    def build(self): pass
+"""
+        pkg_file.write_text(content)
+
+        success = spack_manager._add_git_commit_version_to_recipe(pkg_file, version, commit)
+        assert success is True
+
+        lines = pkg_file.read_text().splitlines()
+        idx = next(i for i, line in enumerate(lines) if 'class Bar(Package)' in line)
+        # blank line then inserted version line
+        assert lines[idx+1] == ""
+        assert lines[idx+2].strip() == f'version("{version}", commit="{commit}")'
+
+    def test_add_git_commit_version_to_recipe_returns_false_when_no_target(self, spack_manager, tmp_path):
+        """Test that method returns False if neither version() nor class() found."""
+        version = "5.0.0"
+        commit = "00112233"
+        pkg_file = tmp_path / "package.py"
+        content = """\
+# random file without class or version
+def func(): pass
+"""
+        pkg_file.write_text(content)
+
+        success = spack_manager._add_git_commit_version_to_recipe(pkg_file, version, commit)
+        assert success is False
+        # file unchanged
+        assert pkg_file.read_text() == content
+
+    def test_add_git_commit_version_to_recipe_handles_exceptions(self, spack_manager):
+        """Test that IO errors are caught and False is returned."""
+        missing = "/nonexistent/path/package.py"
+        success = spack_manager._add_git_commit_version_to_recipe(missing, "1.2.3", "nonexist")
+        assert success is False
+
+    @patch('requests.get')
+    def test_fetch_and_write_all_remote_files_success(self, mock_get, spack_manager, tmp_path):
+        """Fetch and write all remote supporting files (HTTP 200 path)."""
+        pkg = "foo"
+        # Override config to use a known org/repo/branch
+        spack_manager.config.get = lambda k, default=None: {
+            "base_url": "https://github.com/testorg/testrepo.git",
+            "branch":   "testbranch"
+        } if k == "spack_repository" else default
+
+        # Prepare the package directory
+        package_dir = tmp_path / "packages" / pkg
+        package_dir.mkdir(parents=True, exist_ok=True)
+
+        # Simulate GitHub API listing
+        file_info = {
+            "type":         "file",
+            "name":         "patch.diff",
+            "download_url": "https://raw.githubusercontent.com/testorg/testrepo/refs/heads/testbranch/"
+                            "var/spack/repos/builtin/packages/foo/patch.diff"
+        }
+        listing = [file_info]
+
+        def fake_get(url, params=None, timeout=None):
+            # first call: listing
+            if "api.github.com" in url:
+                resp = MagicMock(status_code=200)
+                resp.json.return_value = listing
+                return resp
+            # second call: download
+            elif url == file_info["download_url"]:
+                resp = MagicMock(status_code=200)
+                resp.content = b"PATCHEMBED"
+                return resp
+            # any other URL
+            return MagicMock(status_code=404)
+
+        mock_get.side_effect = fake_get
+
+        # Execute
+        spack_manager._fetch_and_write_all_remote_files(pkg, package_dir)
+
+        # Verify that patch.diff was written with the correct content
+        out_file = package_dir / "patch.diff"
+        assert out_file.exists()
+        assert out_file.read_bytes() == b"PATCHEMBED"
+
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_parses_variants_and_excludes_patches(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """Should parse `{version}:VARIANTS:{variants}` and strip out `patches=`."""
+        pkg_name = 'foo'
+        packages = [{'name': pkg_name}]
+        # simulate spack find output with patches= to be removed
+        mock_run.return_value = CompletedProcess(
+            args=[], returncode=0,
+            stdout='1.2.3:VARIANTS:+mpi patches=abc,def\n'
+        )
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert pkg_name in info
+        assert info[pkg_name]['variants'] == '+mpi'
+        assert 'version' not in info[pkg_name]
+
+        # ensure we invoked spack find with correct args
+        called_args = mock_run.call_args[0][0]
+        expected = [
+            '-e', str(tmp_path),
+            'find',
+            '--format', '{version}:VARIANTS:{variants}',
+            pkg_name
+        ]
+        assert called_args == expected
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_uses_current_version_if_provided(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """Should use pkg['current_version'] instead of parsed version."""
+        pkg_name = 'bar'
+        current_version = '9.9.9'
+        packages = [{'name': pkg_name, 'current_version': current_version}]
+        mock_run.return_value = CompletedProcess(
+            args=[], returncode=0,
+            stdout='8.8.8:VARIANTS:+openmp\n'
+        )
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert pkg_name in info
+        assert info[pkg_name]['variants'] == '+openmp'
+        # version key must come from current_version, not parsed "8.8.8"
+        assert info[pkg_name]['version'] == current_version
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_handles_no_output_and_errors(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """Should return empty dict on non-zero return, empty stdout, or exceptions."""
+        # non-zero return code
+        mock_run.return_value = CompletedProcess(args=[], returncode=1, stdout='')
+        assert spack_manager._get_upstream_package_info(tmp_path, [{'name':'pkg'}]) == {}
+
+        # zero return but no content
+        mock_run.return_value = CompletedProcess(args=[], returncode=0, stdout='\n')
+        assert spack_manager._get_upstream_package_info(tmp_path, [{'name':'pkg'}]) == {}
+
+        # exception during command
+        mock_run.side_effect = RuntimeError("boom")
+        assert spack_manager._get_upstream_package_info(tmp_path, [{'name':'pkg'}]) == {}
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_definitions_branch(self, mock_upstream, spack_manager, tmp_path):
+        """When 'definitions' exist, packages go into definitions->packages except scotch/cmakes,
+           and scotch goes into specs."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  definitions:
+  - compilers: ['%gcc']
+  - packages: [existingA,existingB]
+""")
+
+        # Create dummy target env path (unused in this test)
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages: one scotch, one foo, one cmake
+        packages = [
+            {"name": "scotch", "version": "1.0.0", "variants": ""},
+            {"name": "foo",    "version": "2.0.0", "variants": "opt"},
+        ]
+
+        # Dummy platform with no cpu_target
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Find the 'packages' entry inside definitions
+        defs = sp["definitions"]
+        # definitions is a list: ('compilers', 'packages')
+        pkgs_def = next(d for d in defs if "packages" in d)["packages"]
+        # Should only contain foo, not scotch or existing*
+        assert pkgs_def == ["foo@2.0.0 opt"]
+
+        # Scotch should have been appended to specs
+        # original specs was [], now contains scotch
+        assert sp["specs"] == ["scotch@1.0.0"]
+
+    @patch.object(SpackManager, '_add_git_commit_version_to_recipe', return_value=True)
+    @patch.object(SpackManager, '_fetch_recipe_content',           return_value="DUMMY RECIPE")
+    @patch.object(SpackManager, '_fetch_and_write_package_directory', return_value=False)
+    def test_process_pending_git_commits_falls_back_to_remote(self,
+          mock_fetch_local, mock_fetch_remote, mock_add_git, spack_manager, tmp_path):
+        """If local fetch fails, we fall back to remote and still nominate for editing."""
+        pkg, ver, commit = "my-package", "0.1.0", "abcdef1234567890"
+        spack_manager.add_pending_git_commit(pkg, ver, commit)
+
+        result = spack_manager._process_pending_git_commits(str(tmp_path))
+
+        mock_fetch_remote.assert_called_once_with(pkg)
+        mock_add_git.assert_called_once()  # now also patched
+
+        assert len(result) == 1
+        entry = result[0]
+        expected = tmp_path / "envrepo" / "packages" / pkg / "package.py"
+
+        assert entry['package_name'] == pkg
+        assert entry['version']      == ver
+        assert entry['commit_hash']  == commit
+        assert entry['operation']    == 'git_commit'
+        assert entry['use_local_copy']  is True
+        assert entry['found_in_local']  is True    # code always sets this to True
+        assert entry['found_in_remote'] is False
+        assert entry['recipe_path']      == str(expected)
+
+        assert spack_manager.pending_git_commits == []

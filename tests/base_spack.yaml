@@ -1,0 +1,17 @@
+spack:
+  specs:
+    - hdf5@1.10.7
+    - netcdf-c@4.7.4
+  view: true
+  concretizer:
+    unify: true
+  packages:
+    all:
+      compiler: [gcc@9.3.0]
+      providers:
+        mpi: [openmpi]
+  config:
+    install_tree: $spack/opt/spack
+  upstreams:
+    upstream-env:
+      install_tree: /some/upstream/install

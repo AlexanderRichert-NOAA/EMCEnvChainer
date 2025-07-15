@@ -170,51 +170,41 @@ class PackageSpecDialog:
             for i, (field_key, field_label) in enumerate(zip(field_keys, field_names)):
                 y = 5 + i * 2
                 
-                # Handle continue button as a simple selectable item
-                if field_key == "continue":
-                    # Just show the button without separate label and input box
-                    if i == current_field:
-                        self.stdscr.addstr(y, 4, f"> {field_label}", curses.A_REVERSE)
-                        final_cursor_y = y
-                        final_cursor_x = 6
-                    else:
-                        self.stdscr.addstr(y, 4, f"  {field_label}")
+                # Regular text field with label and input box
+                self.stdscr.addstr(y, 4, f"{field_label}:")
+                
+                # Input box
+                box_y = y + 1
+                box_x = 6
+                box_width = width - 12
+                
+                if i == current_field:
+                    self.stdscr.addstr(box_y, box_x, ">" + "─" * (box_width - 2) + "<", curses.A_REVERSE)
                 else:
-                    # Regular text field with label and input box
-                    self.stdscr.addstr(y, 4, f"{field_label}:")
-                    
-                    # Input box
-                    box_y = y + 1
-                    box_x = 6
-                    box_width = width - 12
-                    
-                    if i == current_field:
-                        self.stdscr.addstr(box_y, box_x, ">" + "─" * (box_width - 2) + "<", curses.A_REVERSE)
-                    else:
-                        self.stdscr.addstr(box_y, box_x, " " + "─" * (box_width - 2) + " ")
-                    
-                    # Regular text field with horizontal scrolling
-                    value = fields[field_key]
-                    cursor_pos = cursors[i]
-                    scroll_offset = scrolls[i]
-                    input_width = box_width - 2
-                    
-                    # Adjust scroll to keep cursor visible
-                    if cursor_pos < scroll_offset:
-                        scroll_offset = cursor_pos
-                    elif cursor_pos > scroll_offset + input_width - 1:
-                        scroll_offset = cursor_pos - input_width + 1
-                    scrolls[i] = scroll_offset
-                    
-                    # Display visible portion
-                    visible_value = value[scroll_offset:scroll_offset + input_width]
-                    self.stdscr.addstr(box_y, box_x + 1, visible_value.ljust(input_width))
-                    
-                    # Position cursor for current field
-                    if i == current_field:
-                        display_cursor = cursor_pos - scroll_offset
-                        final_cursor_y = box_y
-                        final_cursor_x = box_x + 1 + display_cursor
+                    self.stdscr.addstr(box_y, box_x, " " + "─" * (box_width - 2) + " ")
+                
+                # Regular text field with horizontal scrolling
+                value = fields[field_key]
+                cursor_pos = cursors[i]
+                scroll_offset = scrolls[i]
+                input_width = box_width - 2
+                
+                # Adjust scroll to keep cursor visible
+                if cursor_pos < scroll_offset:
+                    scroll_offset = cursor_pos
+                elif cursor_pos > scroll_offset + input_width - 1:
+                    scroll_offset = cursor_pos - input_width + 1
+                scrolls[i] = scroll_offset
+                
+                # Display visible portion
+                visible_value = value[scroll_offset:scroll_offset + input_width]
+                self.stdscr.addstr(box_y, box_x + 1, visible_value.ljust(input_width))
+                
+                # Position cursor for current field
+                if i == current_field:
+                    display_cursor = cursor_pos - scroll_offset
+                    final_cursor_y = box_y
+                    final_cursor_x = box_x + 1 + display_cursor
             
             # Position cursor and make it visible
             curses.curs_set(1)  # Show cursor
@@ -633,93 +623,6 @@ class PackageSpecDialog:
             
         except Exception as e:
             self._show_error(f"Error queuing checksum operation: {e}")
-            return False
-
-    def _add_version_to_custom_repo(self, package_name: str, version: str) -> bool:
-        """Add version to custom repository automatically.
-        
-        Args:
-            package_name: Name of the package
-            version: Version to add
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            height, width = self.stdscr.getmaxyx()
-            self.stdscr.clear()
-            
-            title = f"Adding version {version} for {package_name}"
-            title_x = (width - len(title)) // 2
-            self.stdscr.addstr(2, title_x, title, curses.A_BOLD)
-            
-            # Show progress steps
-            steps = [
-                "Creating custom repository and adding version...",
-                "Fetching recipe from remote repository...",
-                "Processing package files...",
-                "Adding to environment repository..."
-            ]
-            
-            current_step = 0
-            for i, step in enumerate(steps):
-                if i == current_step:
-                    self.stdscr.addstr(5 + i, 4, f"► {step}")
-                else:
-                    self.stdscr.addstr(5 + i, 4, f"  {step}")
-            self.stdscr.refresh()
-            
-            # Fetch the recipe content from remote repository
-            current_step = 1
-            self.stdscr.addstr(5, 4, "✓ Creating custom repository and adding version...")
-            self.stdscr.addstr(6, 4, "► Fetching recipe from remote repository...")
-            
-            # Reconstruct the URL for display
-            repo_config = self.spack_manager.config.get("spack_repository", {})
-            base_url = repo_config.get("base_url", "https://github.com/JCSDA/spack.git")
-            base_url_parts = base_url.replace("https://github.com/", "").replace(".git", "").split("/")
-            git_org = base_url_parts[0]
-            git_repo = base_url_parts[1]
-            git_branch = repo_config.get("branch", "develop")
-            package_url = f"https://raw.githubusercontent.com/{git_org}/{git_repo}/refs/heads/{git_branch}/var/spack/repos/builtin/packages/{package_name}/package.py"
-            
-            self.stdscr.addstr(7, 4, f"  URL: {package_url}")
-            self.stdscr.refresh()
-            
-            recipe_content = self.spack_manager._fetch_recipe_content(package_name)
-            
-            # Clear screen and redraw to handle any stray output from spack_manager
-            self.stdscr.clear()
-            self.stdscr.addstr(2, title_x, title, curses.A_BOLD)
-            
-            current_step = 2
-            self.stdscr.addstr(5, 4, "✓ Creating custom repository and adding version...")
-            self.stdscr.addstr(6, 4, "✓ Fetching recipe from remote repository...")
-            self.stdscr.addstr(7, 4, f"✓ Successfully fetched from: {package_url}")
-            self.stdscr.addstr(8, 4, "► Processing package files...")
-            self.stdscr.refresh();
-            
-            # Add to pending recipes with the actual recipe content
-            # This version was found in remote but not local
-            self.spack_manager.add_pending_recipe(package_name, version, recipe_content,
-                                                found_in_local=False, found_in_remote=True)
-            
-            current_step = 3
-            self.stdscr.addstr(8, 4, "✓ Processing package files...")
-            self.stdscr.addstr(9, 4, "✓ Adding to environment repository...")
-            self.stdscr.refresh()
-            
-            # Show completion message
-            self.stdscr.addstr(11, 4, f"✓ Version {version} successfully added to environment repository")
-            self.stdscr.addstr(12, 4, "The package specification has been saved.")
-            self.stdscr.addstr(13, 4, "You will return to the package configuration screen.")
-            self.stdscr.addstr(15, 4, "Press any key to continue...")
-            self.stdscr.refresh()
-            self.stdscr.getch()
-            return True
-                
-        except Exception as e:
-            self._show_error(f"Error adding version: {e}")
             return False
     
     def _show_error(self, message: str):
@@ -1266,21 +1169,21 @@ class EmcEnvChainerTUI:
                         raise RuntimeError(
                             f"Spack executable not found at inferred location: {spack_exe}\n"
                             f"Cannot infer Spack installation from upstream path: {upstream_path}\n"
-                            f"Expected structure: .../spack-stack-X.Y.Z/envs/env-name/install"
+                            f"Expected structure: <spack-stack base>/spack-stack-X.Y.Z/envs/env-name/install"
                         )
                     
                     return spack_root, upstream_path
                 else:
                     raise RuntimeError(
                         f"Invalid upstream path structure: {upstream_path}\n"
-                        f"Expected structure: .../spack-stack-X.Y.Z/envs/env-name/install"
+                        f"Expected structure: <spack-stack base>/spack-stack-X.Y.Z/envs/env-name/install"
                     )
                     
             except ValueError:
                 # 'install' not found in path
                 raise RuntimeError(
                     f"Cannot infer Spack installation from upstream path: {upstream_path}\n"
-                    f"Expected path to end with '.../envs/env-name/install'"
+                    f"Expected path to end with '<spack-stack root>/envs/env-name/install'"
                 )
             
         else:
@@ -1405,10 +1308,7 @@ class EmcEnvChainerTUI:
                 continue
                 
             pkg_type = "📦"
-            description = ""
-            if pkg["type"] == "upgradable" and pkg["source"].get("description"):
-                description = f" - {pkg['source']['description']}"
-            options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']}){description}")
+            options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
         
         # Show radio button selection menu
         radio_menu = RadioButtonMenu(stdscr, "Select packages to include in environment")
@@ -1542,10 +1442,10 @@ class EmcEnvChainerTUI:
                 spack_yaml
             )
             menu.display_info("Concretizing environment...", wait_for_key=False)
-            success, new_installs, concretize_output = spack_manager.concretize_environment(env_path)
+            success, concretize_output = spack_manager.concretize_environment(env_path)
             
             if not success:
-                failure_msg = f"Concretization failed for environment: {env_path}\n\n{chr(10).join(new_installs)}"
+                failure_msg = f"Concretization failed for environment: {env_path}"
                 menu.display_info(failure_msg)
                 return
             

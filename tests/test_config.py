@@ -21,7 +21,7 @@ class TestConfig:
         platforms = config.get_platforms()
         
         # Check that expected platforms are present
-        expected_platforms = ["hera", "orion", "hercules", "derecho", "jet", "gaea"]
+        expected_platforms = ["orion", "hercules", "derecho", "jet", "gaea-c5", "gaea-c6"]
         for platform in expected_platforms:
             assert platform in platforms
             assert "name" in platforms[platform]
@@ -40,19 +40,19 @@ class TestConfig:
         assert config.get("test.key") == "value"
         
         # Test nested key access
-        hera_name = config.get("platforms.hera.name")
-        assert hera_name == "NOAA Hera"
+        ursa_name = config.get("platforms.ursa.name")
+        assert ursa_name == "Ursa (RDHPCS)"
     
     def test_platform_configuration(self):
         """Test platform-specific configuration."""
         config = Config()
         
-        # Test Hera configuration
-        hera_config = config.get("platforms.hera")
-        assert hera_config["name"] == "NOAA Hera"
-        assert "detection_paths" in hera_config
-        assert "model_applications" in hera_config
+        # Test Ursa configuration
+        ursa_config = config.get("platforms.ursa")
+        assert ursa_config["name"] == "Ursa (RDHPCS)"
+        assert "detection_paths" in ursa_config
+        assert "model_applications" in ursa_config
         
         # Test model applications
-        model_apps = hera_config["model_applications"]
+        model_apps = ursa_config["model_applications"]
         assert "ufs_weather_model" in model_apps
