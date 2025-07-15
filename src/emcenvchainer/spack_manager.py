@@ -473,7 +473,7 @@ class SpackManager:
             
             # Process any pending Git commit operations (these also create custom recipes)
             git_packages_needing_edit = self._process_pending_git_commits(str(env_path))
-            packages_needing_edit.extend(git_packages_needing_edit)
+            packages_needing_edit.extend(set(git_packages_needing_edit))
                         
             # Create custom repository structure in the environment if any packages need it
             if packages_needing_edit or self.pending_checksums:
