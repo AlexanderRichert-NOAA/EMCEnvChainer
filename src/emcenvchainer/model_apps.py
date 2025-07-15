@@ -160,7 +160,7 @@ class ModelApplication:
             version_var = match.group(2).strip()
             
             # Skip stack-* packages and ufs_common
-            if package_name.startswith("stack-") or package_name == "ufs_common":
+            if package_name.startswith("stack-") or package_name in ["ufs_common", "zlib"]:
                 return None
             
             # Try to find the version by looking for the variable definition
@@ -175,7 +175,7 @@ class ModelApplication:
             full_spec = match.group(3).lower()
             
             # Skip anything containing ufs_common or stack
-            if "ufs_common" in full_spec or "stack" in full_spec:
+            if any([x in full_spec for x in ["ufs_common", "stack-", "zlib"]]):
                 return None
             
             if '/' in full_spec:
