@@ -148,72 +148,72 @@ load("netcdf/4.9.2")
         
         assert install_path is None
 
-    def test_handle_pathjoin_pattern_success(self):
-        """Test _handle_pathjoin_pattern with valid package and version."""
+    def test_handle_unified_load_pattern_pathjoin_success(self):
+        """Test _handle_unified_load_pattern with valid pathJoin package and version."""
         config = {"module_url_templates": ["https://example.com/test.lua"]}
         app = ModelApplication("test_app", config, "hera")
         
-        # Create a mock match object
+        # Create a mock match object for pathJoin pattern
         mock_match = Mock()
-        mock_match.group.side_effect = ["netcdf", "netcdf_ver"]
+        mock_match.group.side_effect = lambda x: {1: "netcdf", 2: "netcdf_ver", 3: None}[x]
         
         module_content = '''
 local netcdf_ver = "4.9.2"
 load(pathJoin("netcdf", netcdf_ver))
 '''
         
-        result = app._handle_pathjoin_pattern(mock_match, module_content)
+        result = app._handle_unified_load_pattern(mock_match, module_content)
         
         assert result == ("netcdf", "4.9.2")
 
-    def test_handle_pathjoin_pattern_stack_package(self):
-        """Test _handle_pathjoin_pattern with stack package (should be skipped)."""
+    def test_handle_unified_load_pattern_pathjoin_stack_package(self):
+        """Test _handle_unified_load_pattern with stack package (should be skipped)."""
         config = {"module_url_templates": ["https://example.com/test.lua"]}
         app = ModelApplication("test_app", config, "hera")
         
         mock_match = Mock()
-        mock_match.group.side_effect = ["stack-intel", "stack_intel_ver"]
+        mock_match.group.side_effect = lambda x: {1: "stack-intel", 2: "stack_intel_ver", 3: None}[x]
         
         module_content = '''
 local stack_intel_ver = "2021.1"
 load(pathJoin("stack-intel", stack_intel_ver))
 '''
         
-        result = app._handle_pathjoin_pattern(mock_match, module_content)
+        result = app._handle_unified_load_pattern(mock_match, module_content)
         
         assert result is None
 
-    def test_handle_pathjoin_pattern_ufs_common(self):
-        """Test _handle_pathjoin_pattern with ufs_common (should be skipped)."""
+    def test_handle_unified_load_pattern_pathjoin_ufs_common(self):
+        """Test _handle_unified_load_pattern with ufs_common (should be skipped)."""
         config = {"module_url_templates": ["https://example.com/test.lua"]}
         app = ModelApplication("test_app", config, "hera")
         
         mock_match = Mock()
-        mock_match.group.side_effect = ["ufs_common", "ufs_common_ver"]
+        mock_match.group.side_effect = lambda x: {1: "ufs_common", 2: "ufs_common_ver", 3: None}[x]
         
         module_content = '''
 local ufs_common_ver = "1.0"
 load(pathJoin("ufs_common", ufs_common_ver))
 '''
         
-        result = app._handle_pathjoin_pattern(mock_match, module_content)
+        result = app._handle_unified_load_pattern(mock_match, module_content)
         
         assert result is None
 
-    def test_handle_pathjoin_pattern_version_not_found(self):
-        """Test _handle_pathjoin_pattern when version variable is not found."""
+    def test_handle_unified_load_pattern_pathjoin_version_not_found(self):
+        """Test _handle_unified_load_pattern when version variable is not found."""
         config = {"module_url_templates": ["https://example.com/test.lua"]}
         app = ModelApplication("test_app", config, "hera")
         
         mock_match = Mock()
-        mock_match.group.side_effect = ["netcdf", "netcdf_ver"]
+        mock_match.group.side_effect = lambda x: {1: "netcdf", 2: "netcdf_ver", 3: None}[x]
         
         module_content = '''
 -- No version definition for netcdf_ver
 load(pathJoin("netcdf", netcdf_ver))
 '''
         
-        result = app._handle_pathjoin_pattern(mock_match, module_content)
+        result = app._handle_unified_load_pattern(mock_match, module_content)
         
         assert result is None
 
@@ -310,6 +310,144 @@ load(pathJoin("hdf5", hdf5_fortran_ver))
         
         assert result == ("hdf5", "1.12.2")
 
+    @patch('requests.get')
+    def test_unified_load_pattern_handles_all_cases(self, mock_get):
+        """Test that the unified load pattern can handle pathJoin, simple, and versioned load patterns."""
+        config = {
+            "module_url_templates": ["http://example.com/ufs_test.intel.lua"],
+            "install_path_regex": r'setenv\("UFS_MODEL", "([^"]+)"\)'
+        }
+        model_app = ModelApplication("test_app", config, "test_platform")
+        
+        # Mock module file content with all three load pattern types
+        module_content = '''
+-- UFS module file for test site
+local mypkg_ver = os.getenv("mypkg_ver") or "1.2.3"
+local otherpkg_ver = os.getenv("otherpkg_ver") or "2.0.0"
+
+-- pathJoin pattern
+load(pathJoin("mypkg", mypkg_ver))
+load(pathJoin("otherpkg", otherpkg_ver))
+
+-- Simple load pattern without version (should be ignored)
+load("ufs_common")
+load("stack-intel")
+
+-- Versioned load pattern
+load("versioned_pkg/4.5.6")
+load("another_pkg/7.8.9")
+
+-- Mixed cases to ensure robust parsing
+load(pathJoin("complex_pkg", complex_pkg_ver))
+local complex_pkg_ver = os.getenv("complex_pkg_ver") or "3.1.4"
+'''
+        
+        # Mock the HTTP response
+        mock_response = Mock()
+        mock_response.text = module_content
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        # Parse dependencies
+        dependencies = model_app.parse_dependencies()
+        
+        # Convert to a dict for easier testing
+        dep_dict = {dep['name']: dep['version'] for dep in dependencies}
+        
+        # Verify pathJoin patterns were processed
+        assert 'mypkg' in dep_dict
+        assert dep_dict['mypkg'] == '1.2.3'
+        assert 'otherpkg' in dep_dict
+        assert dep_dict['otherpkg'] == '2.0.0'
+        
+        # Verify versioned load patterns were processed
+        assert 'versioned_pkg' in dep_dict
+        assert dep_dict['versioned_pkg'] == '4.5.6'
+        assert 'another_pkg' in dep_dict
+        assert dep_dict['another_pkg'] == '7.8.9'
+        
+        # Verify complex_pkg was processed (even though var defined after load)
+        assert 'complex_pkg' in dep_dict
+        assert dep_dict['complex_pkg'] == '3.1.4'
+        
+        # Verify excluded patterns were not included
+        excluded_names = [dep['name'] for dep in dependencies]
+        assert 'ufs_common' not in excluded_names
+        assert 'stack-intel' not in excluded_names
+        
+        # Verify all dependencies have the expected structure
+        for dep in dependencies:
+            assert 'name' in dep
+            assert 'version' in dep
+            assert 'variants' in dep
+            assert 'raw_match' in dep
+            assert dep['variants'] == ""  # Should be empty string by default
+
+    @patch('requests.get')
+    def test_unified_load_pattern_group_matching(self, mock_get):
+        """Test that the regex groups are correctly matched for different pattern types."""
+        config = {"module_url_templates": ["http://example.com/test.lua"]}
+        model_app = ModelApplication("test_app", config, "test_platform")
+        
+        module_content = '''
+-- Test specific group matching
+local testpkg_ver = "1.0.0"
+load(pathJoin("testpkg", testpkg_ver))
+load("simple/2.0.0")
+'''
+        
+        mock_response = Mock()
+        mock_response.text = module_content
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        dependencies = model_app.parse_dependencies()
+        
+        # Should find both packages
+        assert len(dependencies) == 2
+        
+        dep_names = [dep['name'] for dep in dependencies]
+        assert 'testpkg' in dep_names
+        assert 'simple' in dep_names
+        
+        # Check versions
+        dep_dict = {dep['name']: dep['version'] for dep in dependencies}
+        assert dep_dict['testpkg'] == '1.0.0'
+        assert dep_dict['simple'] == '2.0.0'
+
+    @patch('requests.get')
+    def test_unified_load_pattern_filtering(self, mock_get):
+        """Test that stack and ufs_common packages are properly filtered."""
+        config = {"module_url_templates": ["http://example.com/test.lua"]}
+        model_app = ModelApplication("test_app", config, "test_platform")
+        
+        module_content = '''
+-- Test filtering
+local good_pkg_ver = "1.0.0"
+load(pathJoin("good_pkg", good_pkg_ver))
+load(pathJoin("stack-intel", stack_intel_ver))
+load(pathJoin("ufs_common", ufs_common_ver))
+load("good_simple/2.0.0")
+load("stack-gcc/system")
+load("ufs_common/latest")
+'''
+        
+        mock_response = Mock()
+        mock_response.text = module_content
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        dependencies = model_app.parse_dependencies()
+        
+        # Should only find the good packages
+        dep_names = [dep['name'] for dep in dependencies]
+        assert 'good_pkg' in dep_names
+        assert 'good_simple' in dep_names
+        assert 'stack-intel' not in dep_names
+        assert 'stack-gcc' not in dep_names
+        assert 'ufs_common' not in dep_names
+        
+        assert len(dependencies) == 2
 
 class TestModelApplicationManager:
     """Test ModelApplicationManager class."""

@@ -103,10 +103,6 @@ class ModelApplication:
         
         # Pattern handlers with specific logic for each pattern type
         pattern_handlers = {
-            'load_with_version': {
-                'pattern': r'load\("([^/]+)/([^"]+)"\)',
-                'handler': self._handle_load_pattern
-            },
             'depends_on': {
                 'pattern': r'depends_on\("([^@]+)@([^"]+)"\)',
                 'handler': self._handle_depends_on_pattern
@@ -149,12 +145,6 @@ class ModelApplication:
         
         self._dependencies = unique_deps
         return self._dependencies
-
-    def _handle_load_pattern(self, match, module_content):
-        """Handle load("package/version") patterns."""
-        package_name = match.group(1).lower()
-        version = match.group(2)
-        return (package_name, version)
 
     def _handle_depends_on_pattern(self, match, module_content):
         """Handle depends_on("package@version") patterns."""
@@ -293,7 +283,7 @@ class ModelApplication:
             },
             'load_with_version': {
                 'pattern': r'load\("([^/]+)/([^"]+)"\)',
-                'handler': self._handle_load_pattern
+                'handler': self._handle_simple_load_version_pattern
             },
             'pathjoin_load': {
                 'pattern': r'load\(pathJoin\("([^"]+)",\s*([^)]+)\)\)',
@@ -333,6 +323,12 @@ class ModelApplication:
                 unique_packages.append(pkg)
         
         return unique_packages
+
+    def _handle_simple_load_version_pattern(self, match, module_content):
+        """Handle load("package/version") patterns for upgradable packages."""
+        package_name = match.group(1).lower()
+        version = match.group(2)
+        return (package_name, version)
 
     def _handle_ufs_table_pattern(self, match, module_content):
         """Handle UFS table format: {["package"] = "version"}."""
