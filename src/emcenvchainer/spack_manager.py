@@ -501,7 +501,7 @@ class SpackManager:
             self._log_and_print(f"✓ Created environment directory: {env_path}")
             self._log_and_print(f"✓ Created spack.yaml with upstream: {upstream_path}")
             
-            return str(env_path), set(packages_needing_edit)
+            return str(env_path), packages_needing_edit
             
         except Exception as e:
             error_msg = f"Failed to create environment: {e}"
