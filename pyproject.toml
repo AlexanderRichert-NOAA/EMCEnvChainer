@@ -44,10 +44,10 @@ dev = [
 emcenvchainer = "emcenvchainer.main:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/emcenvchainer"
-Repository = "https://github.com/your-org/emcenvchainer.git"
-Documentation = "https://github.com/your-org/emcenvchainer#readme"
-"Bug Tracker" = "https://github.com/your-org/emcenvchainer/issues"
+Homepage = "https://github.com/AlexanderRichert-NOAA/emcenvchainer"
+Repository = "https://github.com/AlexanderRichert-NOAA/emcenvchainer.git"
+Documentation = "https://github.com/AlexanderRichert-NOAA/emcenvchainer#readme"
+"Bug Tracker" = "https://github.com/AlexanderRichert-NOAA/emcenvchainer/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
