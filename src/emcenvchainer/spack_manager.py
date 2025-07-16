@@ -473,7 +473,7 @@ class SpackManager:
             
             # Process any pending Git commit operations (these also create custom recipes)
             git_packages_needing_edit = self._process_pending_git_commits(str(env_path))
-            packages_needing_edit.extend(set(git_packages_needing_edit))
+            packages_needing_edit.extend(git_packages_needing_edit)
                         
             # Create custom repository structure in the environment if any packages need it
             if packages_needing_edit or self.pending_checksums:
@@ -501,7 +501,7 @@ class SpackManager:
             self._log_and_print(f"✓ Created environment directory: {env_path}")
             self._log_and_print(f"✓ Created spack.yaml with upstream: {upstream_path}")
             
-            return str(env_path), packages_needing_edit
+            return str(env_path), set(packages_needing_edit)
             
         except Exception as e:
             error_msg = f"Failed to create environment: {e}"
