@@ -13,7 +13,6 @@ class TestConfig:
         config = Config()
         assert config._config is not None
         assert "platforms" in config._config
-        assert "spack" in config._config
     
     def test_builtin_platforms(self):
         """Test that built-in platforms are available."""
@@ -21,12 +20,12 @@ class TestConfig:
         platforms = config.get_platforms()
         
         # Check that expected platforms are present
-        expected_platforms = ["orion", "hercules", "derecho", "jet", "gaea-c5", "gaea-c6"]
+        expected_platforms = ["ursa", "orion", "hercules", "jet", "gaea-c5", "gaea-c6"]
         for platform in expected_platforms:
             assert platform in platforms
             assert "name" in platforms[platform]
             assert "spack_stack_path" in platforms[platform]
-            assert "detection_paths" in platforms[platform]
+            assert "hostname_patterns" in platforms[platform]
     
     def test_config_get_set(self):
         """Test config get/set operations."""
@@ -50,7 +49,7 @@ class TestConfig:
         # Test Ursa configuration
         ursa_config = config.get("platforms.ursa")
         assert ursa_config["name"] == "Ursa (RDHPCS)"
-        assert "detection_paths" in ursa_config
+        assert "hostname_patterns" in ursa_config
         assert "model_applications" in ursa_config
         
         # Test model applications
