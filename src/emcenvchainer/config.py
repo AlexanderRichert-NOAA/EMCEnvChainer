@@ -23,7 +23,7 @@ class Config:
                 "ursa": {
                     "name": "Ursa (RDHPCS)",
                     "spack_stack_path": "/contrib/spack-stack",
-                    "hostname_patterns": ["ufe0[1-4]", "uecflow01"],
+                    "hostname_patterns": ["ufe0[1-4]-cluster.+", "uecflow01-cluster.+"],
                     "cpu_target": "zen3",
                     "model_applications": {
                         "ufs_weather_model": {
