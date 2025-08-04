@@ -1,6 +1,8 @@
 """Platform detection and management."""
 
 import os
+import re
+import socket
 from pathlib import Path
 from typing import List, Dict, Optional
 import glob
@@ -104,7 +106,7 @@ class PlatformDetector:
         # Check built-in platform configurations
         platforms = self.config.get_platforms()
         for platform_key, platform_config in platforms.items():
-            if self._check_platform_paths(platform_config) or os.getenv("SITE_OVERRIDE")==platform_key:
+            if self._check_platform_hostname(platform_config) or os.getenv("SITE_OVERRIDE")==platform_key:
                 return Platform(
                     name=platform_config.get("name", platform_key),
                     spack_stack_path=platform_config["spack_stack_path"],
@@ -114,13 +116,13 @@ class PlatformDetector:
         print("No platform detected. Supported platforms:")
         for platform_key, platform_config in platforms.items():
             name = platform_config.get("name", platform_key)
-            detection_paths = platform_config.get("detection_paths", [])
-            print(f"  - {name}: requires {detection_paths}")
+            hostname_patterns = platform_config.get("hostname_patterns", [])
+            print(f"  - {name}: hostname patterns {hostname_patterns}")
         
         return None
     
-    def _check_platform_paths(self, platform_config: Dict) -> bool:
-        """Check if platform detection paths exist.
+    def _check_platform_hostname(self, platform_config: Dict) -> bool:
+        """Check if platform hostname patterns match the current hostname.
         
         Args:
             platform_config: Platform configuration
@@ -128,11 +130,18 @@ class PlatformDetector:
         Returns:
             True if platform is detected
         """
-        detection_paths = platform_config.get("detection_paths", [])
+        hostname_patterns = platform_config.get("hostname_patterns", [])
         
-        # Check detection paths only - don't require spack-stack to exist
-        for path in detection_paths:
-            if not os.path.exists(path):
-                return False
+        if not hostname_patterns:
+            return False
         
-        return True
+        # Get the fully qualified domain name
+        fqdn = socket.getfqdn()
+
+        
+        # Check if any hostname pattern matches
+        for pattern in hostname_patterns:
+            if re.match("^" + pattern.lower() + "$", fqdn.lower()):
+                return True
+        
+        return False

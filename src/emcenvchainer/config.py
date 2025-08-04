@@ -23,7 +23,7 @@ class Config:
                 "ursa": {
                     "name": "Ursa (RDHPCS)",
                     "spack_stack_path": "/contrib/spack-stack",
-                    "detection_paths": ["/tmp_mnt/ursa"],
+                    "hostname_patterns": ["ufe0[1-4]", "uecflow01"],
                     "cpu_target": "zen3",
                     "model_applications": {
                         "ufs_weather_model": {
@@ -40,7 +40,7 @@ class Config:
                 "orion": {
                     "name": "Orion (RDHPCS/MSU)", 
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack",
-                    "detection_paths": ["/work", "/scratch/orion"],
+                    "hostname_patterns": ["Orion-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -54,7 +54,7 @@ class Config:
                 "hercules": {
                     "name": "Hercules (RDHPCS/MSU)",
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack", 
-                    "detection_paths": ["/work", "/scratch/hercules"],
+                    "hostname_patterns": ["Hercules-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -66,25 +66,10 @@ class Config:
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
-                "derecho": {
-                    "name": "Derecho (NCAR)",
-                    "spack_stack_path": "/glade/work/epicufsrt/contrib/spack-stack/derecho",
-                    "detection_paths": ["/glade/work", "/glade/u"],
-                    "model_applications": {
-                        "ufs_weather_model": {
-                            "name": "UFS Weather Model",
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_derecho.intel.lua",
-                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_derecho.gnu.lua"
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
-                    }
-                },
                 "jet": {
                     "name": "Jet (RDHPCS)",
                     "spack_stack_path": "/lfs4/HFIP/hfv3gfs/role.epic/spack-stack",
-                    "detection_paths": ["/lfs4", "/mnt/lfs4"],
+                    "hostname_patterns": [".+.jet.boulder.rdhpcs.noaa.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -98,7 +83,7 @@ class Config:
                 "gaea-c5": {
                     "name": "Gaea C5 (NOAA)",
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c5",
-                    "detection_paths": ["/ncrc", "/gpfs/f5"],
+                    "hostname_patterns": ["gaea5[1-8].ncrc.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -112,7 +97,7 @@ class Config:
                 "gaea-c6": {
                     "name": "Gaea C6 (NOAA)",
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c6",
-                    "detection_paths": ["/ncrc", "/gpfs/f6"],
+                    "hostname_patterns": ["gaea6[0-8].ncrc.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -123,10 +108,6 @@ class Config:
                             "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
-            },
-            "spack": {
-                "custom_repo_name": "emcenvchainer-custom",
-                "environment_prefix": "emcenv-"
             },
         }
     
