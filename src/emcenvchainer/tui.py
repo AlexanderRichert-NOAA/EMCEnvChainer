@@ -1072,11 +1072,6 @@ class EmcEnvChainerTUI:
         options = []
         sources = []
         
-        # Add Spack installations
-        for installation in self.platform.spack_installations:
-            options.append(f"🔗 {installation['name']} - {installation['install_path']}")
-            sources.append(installation)
-        
         # Add all model applications (showing module file URLs)
         for app in self.model_app_manager.applications:
             # Get the module URL choices for this application
@@ -1093,6 +1088,11 @@ class EmcEnvChainerTUI:
                     "selected_module_url": choice['url'],
                     "module_choice": choice
                 })
+        
+        # Add Spack installations
+        for installation in self.platform.spack_installations:
+            options.append(f"🔗 {installation['name']} - {installation['install_path']}")
+            sources.append(installation)
         
         if not options:
             menu.display_info("No installations or model applications found!")

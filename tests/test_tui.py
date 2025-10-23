@@ -1293,7 +1293,7 @@ class TestEmcEnvChainerTUI:
         # Patch the model_app_manager's applications property using PropertyMock
         with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
             mock_apps.return_value = [mock_app]
-            # Select first option (which is a spack installation)
+            # Select first option (which is now a model application, since they come first)
             mock_stdscr.getch.return_value = ord('\n')
             
             result = tui_app._select_installation(mock_stdscr)
@@ -1301,9 +1301,9 @@ class TestEmcEnvChainerTUI:
             # Verify the app's get_module_url_choices was called
             mock_app.get_module_url_choices.assert_called_once()
             
-            # Result should be the first spack installation
+            # Result should be the first model application
             assert result is not None
-            assert result["type"] == "jcsda-spack-stack"
+            assert result["type"] == "model_application"
     
     def test_select_installation_select_model_application(self, tui_app, mock_stdscr):
         """Test selecting a model application from the menu."""
@@ -1318,8 +1318,8 @@ class TestEmcEnvChainerTUI:
         # Patch the model_app_manager's applications property using PropertyMock
         with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
             mock_apps.return_value = [mock_app]
-            # Navigate down to select the model application (skip the spack installation)
-            mock_stdscr.getch.side_effect = [curses.KEY_DOWN, ord('\n')]
+            # Model applications now come first, so select the first option
+            mock_stdscr.getch.return_value = ord('\n')
             
             result = tui_app._select_installation(mock_stdscr)
             
@@ -1352,9 +1352,9 @@ class TestEmcEnvChainerTUI:
         # Patch the model_app_manager's applications property using PropertyMock
         with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
             mock_apps.return_value = [mock_app1, mock_app2]
-            # Select the third option (second URL of first app)
-            # Options: [spack-install, ufs-v1, ufs-v2, gfs-ops, gfs-dev, custom]
-            mock_stdscr.getch.side_effect = [curses.KEY_DOWN, curses.KEY_DOWN, ord('\n')]
+            # Select the second option (second URL of first app)
+            # Options (with model apps first): [ufs-v1, ufs-v2, gfs-ops, gfs-dev, spack-install, custom]
+            mock_stdscr.getch.side_effect = [curses.KEY_DOWN, ord('\n')]
             
             result = tui_app._select_installation(mock_stdscr)
             
