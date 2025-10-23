@@ -40,7 +40,7 @@ class Config:
                 "orion": {
                     "name": "Orion (RDHPCS/MSU)", 
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack",
-                    "hostname_patterns": ["Orion-login.*\.HPC.MsState.Edu"],
+                    "hostname_patterns": [r"Orion-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
@@ -54,7 +54,7 @@ class Config:
                 "hercules": {
                     "name": "Hercules (RDHPCS/MSU)",
                     "spack_stack_path": "/work/noaa/epic/role-epic/spack-stack", 
-                    "hostname_patterns": ["Hercules-login.*\.HPC.MsState.Edu"],
+                    "hostname_patterns": [r"Hercules-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
                             "name": "UFS Weather Model",
