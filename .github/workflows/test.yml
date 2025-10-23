@@ -3,7 +3,7 @@ name: Unit Tests
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  test:
+  pytest:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -26,7 +26,7 @@ jobs:
     
     - name: Run unit tests with pytest
       run: |
-        python -m pytest tests/ -v --tb=short --cov=emcenvchainer --cov-report=term-missing --cov-report=html
+        python -m pytest tests/ -v --tb=short -W error --cov=emcenvchainer --cov-report=term-missing --cov-report=html
     
     - name: Upload coverage report as artifact
       if: matrix.python-version == '3.11'
