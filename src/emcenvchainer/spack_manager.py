@@ -278,22 +278,6 @@ class SpackManager:
                         else:
                             self._log_and_print(f"✗ Could not copy {package_name} from local installation", "warning")
 
-                    # If manual edit requested and recipe_content is provided (but not remote), write it
-                    elif needs_manual_edit and recipe_content:
-                        package_py_path = package_dir / "package.py"
-                        with open(package_py_path, 'w') as f:
-                            f.write(recipe_content)
-                        if self.logger:
-                            self.logger.info(f"Written provided recipe content for manual editing")
-                        packages_needing_edit.append({
-                            'package_name': package_name,
-                            'version': version,
-                            'recipe_path': str(package_py_path),
-                            'use_local_copy': use_local_copy,
-                            'found_in_local': found_in_local,
-                            'found_in_remote': found_in_remote
-                        })
-
                     # Otherwise, try to copy from local installation
                     else:
                         success = self._fetch_and_write_package_directory(package_name, package_dir)
