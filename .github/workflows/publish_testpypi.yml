@@ -3,6 +3,7 @@ name: Publish to TestPyPI on release
 on:
   release:
     types: [published]
+    branches: [develop]
 
 concurrency:
   group: publish-testpypi
