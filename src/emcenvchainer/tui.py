@@ -26,12 +26,13 @@ class TUIMenu:
         self.current_row = 0
         self.top_row = 0
     
-    def display_menu(self, options: List[str], selected_row: int = 0) -> Optional[int]:
+    def display_menu(self, options: List[str], selected_row: int = 0, help_text: Optional[str] = None) -> Optional[int]:
         """Display menu and handle selection.
         
         Args:
             options: List of menu options
             selected_row: Initially selected row
+            help_text: Optional help text to display below title
             
         Returns:
             Selected option index, None if cancelled
@@ -46,8 +47,37 @@ class TUIMenu:
             title_x = (width - len(self.title)) // 2
             self.stdscr.addstr(1, title_x, self.title, curses.A_BOLD)
             
+            # Display help text if provided
+            start_y = 4
+            if help_text:
+                # Word wrap the help text to fit the screen width
+                max_width = width - 8
+                words = help_text.split()
+                lines = []
+                current_line = []
+                current_length = 0
+                
+                for word in words:
+                    if current_length + len(word) + 1 <= max_width:
+                        current_line.append(word)
+                        current_length += len(word) + 1
+                    else:
+                        if current_line:
+                            lines.append(' '.join(current_line))
+                        current_line = [word]
+                        current_length = len(word) + 1
+                
+                if current_line:
+                    lines.append(' '.join(current_line))
+                
+                # Display the wrapped help text
+                for i, line in enumerate(lines):
+                    self.stdscr.addstr(3 + i, 4, line)
+                
+                start_y = 3 + len(lines) + 1  # Add spacing after help text
+            
             # Calculate display window
-            max_display = height - 6
+            max_display = height - start_y - 2
             if self.current_row >= self.top_row + max_display:
                 self.top_row = self.current_row - max_display + 1
             elif self.current_row < self.top_row:
@@ -56,7 +86,7 @@ class TUIMenu:
             # Display options
             for idx, option in enumerate(options[self.top_row:self.top_row + max_display]):
                 row_idx = self.top_row + idx
-                y = 4 + idx
+                y = start_y + idx
                 
                 if row_idx == self.current_row:
                     self.stdscr.addstr(y, 2, f"> {option}", curses.A_REVERSE)
@@ -69,7 +99,7 @@ class TUIMenu:
             
             # Show scroll indicators
             if self.top_row > 0:
-                self.stdscr.addstr(3, width - 3, "↑")
+                self.stdscr.addstr(start_y - 1, width - 3, "↑")
             if self.top_row + max_display < len(options):
                 self.stdscr.addstr(height - 3, width - 3, "↓")
             
@@ -1035,6 +1065,9 @@ class EmcEnvChainerTUI:
         """
         menu = TUIMenu(stdscr, "Select Installation Source")
         
+        # Help text with documentation link
+        help_text = "For documentation on package versions for each release, add-on environments, and platform-specific notes, see https://github.com/JCSDA/spack-stack/wiki"
+        
         # Combine Spack installations and model applications
         options = []
         sources = []
@@ -1069,7 +1102,7 @@ class EmcEnvChainerTUI:
         options.append("📁 Specify custom path...")
         sources.append({"type": "custom"})
         
-        selected_idx = menu.display_menu(options)
+        selected_idx = menu.display_menu(options, help_text=help_text)
         if selected_idx is None:
             return None
         
