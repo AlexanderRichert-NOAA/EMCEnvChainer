@@ -1,6 +1,6 @@
 # EMCEnvChainer
 
-![unit tests](https://github.com/github/docs/actions/workflows/unit-tests.yml/badge.svg)
+![unit tests](https://github.com/AlexanderRichert-NOAA/EMCEnvChainer/actions/workflows/unit-tests.yml/badge.svg)
 
 This is a utility for quickly adding packages to existing spack-stack environments using Spack's environment chaining feature.
 
