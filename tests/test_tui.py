@@ -1336,32 +1336,32 @@ class TestEmcEnvChainerTUI:
         mock_app1.name = "ufs-weather-model"
         mock_app1.config = {"name": "UFS Weather Model"}
         mock_app1.get_module_url_choices.return_value = [
-            {"name": "Release v1.0", "url": "https://example.com/ufs-v1.lua"},
-            {"name": "Release v2.0", "url": "https://example.com/ufs-v2.lua"}
+            {"name": "GCC", "url": "https://example.com/ufs-gcc.lua"},
+            {"name": "oneAPI", "url": "https://example.com/ufs-oneapi.lua"}
         ]
         
         # Create second mock model application
         mock_app2 = Mock()
-        mock_app2.name = "gfs-model"
-        mock_app2.config = {"name": "GFS Model"}
+        mock_app2.name = "global-workflow"
+        mock_app2.config = {"name": "Global Workflow"}
         mock_app2.get_module_url_choices.return_value = [
-            {"name": "Operational", "url": "https://example.com/gfs-ops.lua"},
-            {"name": "Development", "url": "https://example.com/gfs-dev.lua"}
+            {"name": "GCC", "url": "https://example.com/gw-gcc.lua"},
+            {"name": "oneAPI", "url": "https://example.com/gw-oneapi.lua"}
         ]
         
         # Patch the model_app_manager's applications property using PropertyMock
         with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
             mock_apps.return_value = [mock_app1, mock_app2]
-            # Select the second option (second URL of first app)
-            # Options (with model apps first): [ufs-v1, ufs-v2, gfs-ops, gfs-dev, spack-install, custom]
+            # Select the second option (oneAPI of first app)
+            # Options (with model apps first): [ufs-gcc, ufs-oneapi, gw-gcc, gw-oneapi, spack-install, custom]
             mock_stdscr.getch.side_effect = [curses.KEY_DOWN, ord('\n')]
             
             result = tui_app._select_installation(mock_stdscr)
             
             assert result is not None
             assert result["type"] == "model_application"
-            assert result["name"] == "ufs-weather-model (Release v2.0)"
-            assert result["selected_module_url"] == "https://example.com/ufs-v2.lua"
+            assert result["name"] == "ufs-weather-model (oneAPI)"
+            assert result["selected_module_url"] == "https://example.com/ufs-oneapi.lua"
     
     def test_select_installation_no_options(self, tui_app, mock_stdscr):
         """Test installation selection when no options are available."""
@@ -1474,8 +1474,8 @@ class TestEmcEnvChainerTUI:
         
         # Create mock model application
         mock_app = Mock()
-        mock_app.name = "gfs-model"
-        mock_app.config = {"name": "GFS Model"}
+        mock_app.name = "global-workflow"
+        mock_app.config = {"name": "Global Workflow"}
         mock_app.platform_name = "hera"
         
         installation = {
@@ -1487,22 +1487,22 @@ class TestEmcEnvChainerTUI:
         # Mock ModelApplication class - patch where it's imported (in model_apps module)
         with patch('emcenvchainer.model_apps.ModelApplication') as mock_model_app_class:
             mock_model_app_instance = Mock()
-            mock_model_app_instance.extract_install_path.return_value = "/opt/spack-stack/spack-stack-2.0.0/envs/gfs-ops/install"
+            mock_model_app_instance.extract_install_path.return_value = "/opt/spack-stack/spack-stack-2.0.0/envs/gw-env/install"
             mock_model_app_class.return_value = mock_model_app_instance
             
             spack_root, upstream_path = tui_app._get_spack_config(installation)
             
             # Verify ModelApplication was instantiated with selected URL
             mock_model_app_class.assert_called_once_with(
-                "gfs-model", 
-                {"name": "GFS Model"}, 
+                "global-workflow", 
+                {"name": "Global Workflow"}, 
                 "hera", 
                 "http://example.com/module.lua"
             )
             
             # Should infer spack root correctly
             assert spack_root == "/opt/spack-stack/spack-stack-2.0.0/spack"
-            assert upstream_path == "/opt/spack-stack/spack-stack-2.0.0/envs/gfs-ops/install"
+            assert upstream_path == "/opt/spack-stack/spack-stack-2.0.0/envs/gw-env/install"
     
     @patch('os.path.exists')
     def test_get_spack_config_model_application_no_install_path(self, mock_exists, tui_app):
@@ -1734,17 +1734,17 @@ class TestEmcEnvChainerTUI:
         
         # Create model application
         mock_app = Mock()
-        mock_app.name = "gfs-model"
-        mock_app.config = {"name": "GFS Model"}
+        mock_app.name = "global-workflow"
+        mock_app.config = {"name": "Global Workflow"}
         mock_app.platform_name = "hera"
-        mock_app.extract_install_path.return_value = "/stack/spack-stack-2.0.0/envs/gfs/install"
+        mock_app.extract_install_path.return_value = "/stack/spack-stack-2.0.0/envs/gw/install"
         
         # Create model application installation with selected URL
         installation = {
             "type": "model_application",
-            "name": "gfs-model (Intel)",
+            "name": "global-workflow (GCC)",
             "application": mock_app,
-            "selected_module_url": "http://example.com/gfs.intel.lua"
+            "selected_module_url": "http://example.com/gw.gcc.lua"
         }
         
         # Mock ModelApplication class to return instance with extract_install_path
@@ -1912,15 +1912,15 @@ class TestEmcEnvChainerTUI:
         mock_spack_manager = Mock()
         
         mock_app = Mock()
-        mock_app.name = "gfs-model"
-        mock_app.config = {"name": "GFS Model"}
+        mock_app.name = "global-workflow"
+        mock_app.config = {"name": "Global Workflow"}
         mock_app.platform_name = "hera"
         
         installation = {
             "type": "model_application",
-            "name": "gfs-model (Intel)",
+            "name": "global-workflow (GCC)",
             "application": mock_app,
-            "selected_module_url": "http://example.com/gfs.intel.lua"
+            "selected_module_url": "http://example.com/gw.gcc.lua"
         }
         
         # Mock ModelApplication class
@@ -1939,10 +1939,10 @@ class TestEmcEnvChainerTUI:
             
             # Verify ModelApplication was created with selected URL
             mock_model_app_class.assert_called_once_with(
-                "gfs-model",
-                {"name": "GFS Model"},
+                "global-workflow",
+                {"name": "Global Workflow"},
                 "hera",
-                "http://example.com/gfs.intel.lua"
+                "http://example.com/gw.gcc.lua"
             )
             
             assert result == expected_packages
