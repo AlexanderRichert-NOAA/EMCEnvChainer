@@ -817,20 +817,10 @@ class SpackManager:
         try:
             self._log_and_print("Refreshing Lmod modules...")
 
-            # Configure MAPL suffixes for module generation
-            self._log_and_print("Configuring MAPL module suffixes...")
-            
-            # Remove existing MAPL suffixes configuration
-            result = self._run_spack_command(['-e', env_path, 'config', 'rm', 'modules:default:lmod:mapl:suffixes'])
-            if result.returncode != 0:
-                # It's okay if the key doesn't exist
-                if self.logger:
-                    self.logger.debug(f"Note: MAPL suffixes config did not exist to remove: {result.stderr}")
-            
             # Add the ESMF-based suffix for MAPL
             result = self._run_spack_command([
                 '-e', env_path, 'config', 'add',
-                'modules:default:lmod:mapl:suffixes:^esmf:esmf-{^esmf.version}'
+                'modules:default:lmod:mapl::suffixes:^esmf:esmf-{^esmf.version}'
             ])
             if result.returncode != 0:
                 error_msg = f"Failed to configure MAPL suffixes: {result.stderr}"
