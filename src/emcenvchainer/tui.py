@@ -799,10 +799,12 @@ class EmcEnvChainerTUI:
         max_scroll = max(0, len(lines) - display_height)
         
         while True:
+            # Clear the content area
             for y in range(display_start_y, display_start_y + display_height):
                 stdscr.move(y, 0)
                 stdscr.clrtoeol()
             
+            # Display the visible lines
             for i in range(display_height):
                 line_idx = scroll_pos + i
                 if line_idx < len(lines):
@@ -811,9 +813,12 @@ class EmcEnvChainerTUI:
                         line = line[:width - 7] + "..."
                     self._addstr_with_colored_markers(stdscr, display_start_y + i, 2, line)
             
+            # Display scroll indicator (clear the line first to handle varying digit widths)
             if max_scroll > 0:
-                scroll_indicator = f"({scroll_pos + 1}-{min(scroll_pos + display_height, len(lines))} of {len(lines)})"
                 indicator_y = height - len(instruction_lines) - 2  # Position above instruction lines
+                stdscr.move(indicator_y, 0)
+                stdscr.clrtoeol()
+                scroll_indicator = f"({scroll_pos + 1}-{min(scroll_pos + display_height, len(lines))} of {len(lines)})"
                 stdscr.addstr(indicator_y, width - len(scroll_indicator) - 2, scroll_indicator)
             
             stdscr.refresh()
@@ -1414,12 +1419,32 @@ class EmcEnvChainerTUI:
             # Get upstream path from installation config
             _, upstream_path = self._get_spack_config(installation)
             
-            # Use the provided SpackManager (already initialized)
-            # Create environment
-            work_dir = os.getcwd()
-            env_path, packages_needing_edit = spack_manager.create_environment(
-                env_name, upstream_path, packages, work_dir, self.platform,
-            )
+            # Exit curses mode temporarily for environment creation
+            # This allows proper terminal output formatting for logging messages
+            curses.endwin()
+            
+            try:
+                print("\n" + "="*60)
+                print("Creating Spack environment...")
+                print("="*60)
+                print()
+                
+                # Use the provided SpackManager (already initialized)
+                # Create environment
+                work_dir = os.getcwd()
+                env_path, packages_needing_edit = spack_manager.create_environment(
+                    env_name, upstream_path, packages, work_dir, self.platform,
+                )
+                
+                print()
+                print("Environment creation completed!")
+                print("="*60)
+                print()
+                
+            finally:
+                # Restore curses mode
+                stdscr.refresh()
+                curses.doupdate()
             
             has_custom_recipes = len(packages_needing_edit) > 0
             
@@ -1495,8 +1520,18 @@ class EmcEnvChainerTUI:
         if not packages_needing_edit:
             return packages_needing_edit
         
+        # Deduplicate packages by (package_name, version)
+        # Keep the first occurrence of each unique package
+        seen = set()
+        unique_packages = []
+        for pkg in packages_needing_edit:
+            key = (pkg['package_name'], pkg['version'])
+            if key not in seen:
+                seen.add(key)
+                unique_packages.append(pkg)
+        
         # Create copies to avoid modifying the original
-        packages = [pkg.copy() for pkg in packages_needing_edit]
+        packages = [pkg.copy() for pkg in unique_packages]
         
         # Initialize editing choices (only for packages not found in either repo)
         for pkg in packages:

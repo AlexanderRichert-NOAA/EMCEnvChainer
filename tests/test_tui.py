@@ -510,6 +510,101 @@ class TestEmcEnvChainerTUI:
         result = tui_app._determine_recipe_source(pkg)
         
         assert result == "remote Spack repository"
+    
+    def test_show_custom_recipe_dialog_deduplication(self, tui_app, mock_stdscr):
+        """Test that _show_custom_recipe_dialog deduplicates packages."""
+        # Create duplicate packages with same name and version
+        packages_needing_edit = [
+            {
+                "package_name": "hdf5",
+                "version": "1.14.0",
+                "recipe_path": "/path/to/hdf5/package.py",
+                "found_in_local": False,
+                "found_in_remote": True
+            },
+            {
+                "package_name": "hdf5",
+                "version": "1.14.0",
+                "recipe_path": "/path/to/hdf5/package.py",
+                "found_in_local": False,
+                "found_in_remote": True
+            },
+            {
+                "package_name": "netcdf-c",
+                "version": "4.9.0",
+                "recipe_path": "/path/to/netcdf-c/package.py",
+                "found_in_local": False,
+                "found_in_remote": False
+            },
+            {
+                "package_name": "hdf5",
+                "version": "1.14.0",
+                "recipe_path": "/path/to/hdf5/package.py",
+                "found_in_local": False,
+                "found_in_remote": True
+            }
+        ]
+        
+        # Mock Enter key to continue immediately
+        mock_stdscr.getch.return_value = ord('\n')
+        
+        result = tui_app._show_custom_recipe_dialog(mock_stdscr, packages_needing_edit)
+        
+        # Should only have 2 unique packages: hdf5@1.14.0 and netcdf-c@4.9.0
+        assert len(result) == 2
+        
+        # Check that we have exactly one hdf5 and one netcdf-c
+        package_keys = {(pkg['package_name'], pkg['version']) for pkg in result}
+        assert package_keys == {('hdf5', '1.14.0'), ('netcdf-c', '4.9.0')}
+        
+        # Verify the order is preserved (first occurrence kept)
+        assert result[0]['package_name'] == 'hdf5'
+        assert result[1]['package_name'] == 'netcdf-c'
+    
+    def test_show_custom_recipe_dialog_empty_list(self, tui_app, mock_stdscr):
+        """Test that _show_custom_recipe_dialog handles empty list."""
+        packages_needing_edit = []
+        
+        result = tui_app._show_custom_recipe_dialog(mock_stdscr, packages_needing_edit)
+        
+        assert result == []
+    
+    def test_show_custom_recipe_dialog_no_duplicates(self, tui_app, mock_stdscr):
+        """Test that _show_custom_recipe_dialog preserves unique packages."""
+        packages_needing_edit = [
+            {
+                "package_name": "hdf5",
+                "version": "1.14.0",
+                "recipe_path": "/path/to/hdf5/package.py",
+                "found_in_local": False,
+                "found_in_remote": True
+            },
+            {
+                "package_name": "netcdf-c",
+                "version": "4.9.0",
+                "recipe_path": "/path/to/netcdf-c/package.py",
+                "found_in_local": False,
+                "found_in_remote": False
+            },
+            {
+                "package_name": "hdf5",
+                "version": "1.12.0",
+                "recipe_path": "/path/to/hdf5/package.py",
+                "found_in_local": True,
+                "found_in_remote": False
+            }
+        ]
+        
+        # Mock Enter key to continue immediately
+        mock_stdscr.getch.return_value = ord('\n')
+        
+        result = tui_app._show_custom_recipe_dialog(mock_stdscr, packages_needing_edit)
+        
+        # Should have all 3 packages since they're unique
+        assert len(result) == 3
+        
+        package_keys = {(pkg['package_name'], pkg['version']) for pkg in result}
+        assert package_keys == {('hdf5', '1.14.0'), ('netcdf-c', '4.9.0'), ('hdf5', '1.12.0')}
 
 
 class TestTUIIntegration:
