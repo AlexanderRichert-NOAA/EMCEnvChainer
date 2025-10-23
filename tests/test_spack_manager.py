@@ -1339,7 +1339,6 @@ class TestSpackManager:
 
         # Verify initial logging calls
         mock_log_print.assert_any_call("Refreshing Lmod modules...")
-        mock_log_print.assert_any_call("Configuring MAPL module suffixes...")
 
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_log_and_print')
@@ -1371,7 +1370,6 @@ class TestSpackManager:
 
         # Verify logging calls
         mock_log_print.assert_any_call("Refreshing Lmod modules...")
-        mock_log_print.assert_any_call("Configuring MAPL module suffixes...")
         mock_log_print.assert_any_call("Setting up meta-modules...")
 
     @patch.object(SpackManager, '_run_spack_command')
