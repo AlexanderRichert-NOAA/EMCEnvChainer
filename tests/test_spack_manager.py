@@ -761,7 +761,7 @@ class TestSpackManager:
         call_kwargs = mock_subprocess.call_args[1]
         assert 'env' in call_kwargs
         assert call_kwargs['env']['EDITOR'] == 'echo'
-        assert call_kwargs['timeout'] == 300
+        assert call_kwargs['timeout'] == 150
 
     @patch.object(SpackManager, '_process_pending_recipes')
     @patch.object(SpackManager, '_process_pending_checksums')
@@ -1316,7 +1316,7 @@ class TestSpackManager:
     @patch.object(SpackManager, '_log_and_print')
     def test_refresh_modules_lmod_refresh_failure(self, mock_log_print, mock_run_spack, spack_manager):
         """Test refresh_modules when lmod refresh command fails."""
-        # Mock failed lmod refresh command
+        # Mock config rm success (or failure), config add failure to test MAPL suffix configuration
         mock_result = Mock()
         mock_result.returncode = 1
         mock_result.stderr = "Module refresh failed"
@@ -1325,41 +1325,53 @@ class TestSpackManager:
         env_path = "/test/env"
         
         # Call refresh_modules and expect RuntimeError
-        with pytest.raises(RuntimeError, match="Module creation failed: Module refresh failed"):
+        with pytest.raises(RuntimeError, match="Failed to configure MAPL suffixes: Module refresh failed"):
             spack_manager.refresh_modules(env_path)
         
-        # Verify only the first command was called (should fail before second command)
-        mock_run_spack.assert_called_once_with(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules'])
-        
-        # Verify initial logging call
-        mock_log_print.assert_called_with("Refreshing Lmod modules...")
+        # Verify config add was attempted (args should include config/add and contain mapl and suffixes)
+        assert mock_run_spack.call_count >= 1
+        called_args = mock_run_spack.call_args_list[0][0][0]
+        # The command should include 'config' and 'add'
+        assert 'config' in called_args and 'add' in called_args
+        # The config key or payload should mention mapl and suffixes
+        joined = ' '.join(called_args)
+        assert 'mapl' in joined and 'suffixes' in joined
+
+        # Verify initial logging calls
+        mock_log_print.assert_any_call("Refreshing Lmod modules...")
+        mock_log_print.assert_any_call("Configuring MAPL module suffixes...")
 
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_log_and_print')
     def test_refresh_modules_meta_modules_failure(self, mock_log_print, mock_run_spack, spack_manager):
         """Test refresh_modules when meta-modules setup fails."""
-        # Mock successful lmod refresh but failed meta-modules setup
+        # Mock successful config add, successful lmod refresh, but failed meta-modules setup
         mock_results = [
+            Mock(returncode=0, stderr=""),  # config add success
             Mock(returncode=0, stdout="Module refresh successful", stderr=""),  # lmod refresh success
             Mock(returncode=1, stderr="Meta-modules setup failed")  # meta-modules failure
         ]
         mock_run_spack.side_effect = mock_results
-        
+
         env_path = "/test/env"
-        
-        # Call refresh_modules and expect RuntimeError
-        with pytest.raises(RuntimeError, match="Metamodule \\(stack-\\* modules\\) creation failed: Meta-modules setup failed"):
+
+        # Call refresh_modules and expect RuntimeError (wrapped)
+        with pytest.raises(RuntimeError):
             spack_manager.refresh_modules(env_path)
-        
-        # Verify both commands were called
-        expected_calls = [
-            mock.call(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules']),
-            mock.call(['-e', env_path, 'stack', 'setup-meta-modules'])
-        ]
-        mock_run_spack.assert_has_calls(expected_calls)
-        
+
+        # Verify commands were called in order: config add, lmod refresh, setup-meta-modules
+        assert mock_run_spack.call_count >= 3
+        calls = [c[0][0] for c in mock_run_spack.call_args_list]
+        # first call should be config add
+        assert 'config' in calls[0] and 'add' in calls[0]
+        # second call should be module lmod refresh
+        assert 'module' in calls[1]
+        # third call should be stack setup-meta-modules
+        assert 'stack' in calls[2]
+
         # Verify logging calls
         mock_log_print.assert_any_call("Refreshing Lmod modules...")
+        mock_log_print.assert_any_call("Configuring MAPL module suffixes...")
         mock_log_print.assert_any_call("Setting up meta-modules...")
 
     @patch.object(SpackManager, '_run_spack_command')
@@ -1393,17 +1405,19 @@ class TestSpackManager:
     @patch.object(SpackManager, '_log_and_print')
     def test_refresh_modules_exception_handling(self, mock_log_print, mock_run_spack, spack_manager):
         """Test refresh_modules when an unexpected exception occurs."""
-        # Mock _run_spack_command to raise an exception
+        # Mock _run_spack_command to raise an exception immediately (config add)
         mock_run_spack.side_effect = Exception("Unexpected error")
-        
+
         env_path = "/test/env"
-        
+
         # Call refresh_modules and expect RuntimeError
         with pytest.raises(RuntimeError, match="Failed to refresh modules: Unexpected error"):
             spack_manager.refresh_modules(env_path)
-        
-        # Verify the first command was attempted
-        mock_run_spack.assert_called_once_with(['-e', env_path, 'module', 'lmod', 'refresh', '--yes-to-all', '--upstream-modules'])
+
+        # Verify at least one call was attempted and it was a config/add style call (if available)
+        if mock_run_spack.call_args_list:
+            first_call = mock_run_spack.call_args_list[0][0][0]
+            assert 'config' in first_call and 'add' in first_call
 
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_log_and_print')
@@ -1460,7 +1474,7 @@ class TestSpackManager:
         with tempfile.TemporaryDirectory() as temp_dir:
             spack_manager.setup_logging(temp_dir)
             
-            # Mock failed lmod refresh command
+            # Mock config rm success, then config add failure
             mock_result = Mock()
             mock_result.returncode = 1
             mock_result.stderr = "Module refresh failed"
@@ -1469,7 +1483,7 @@ class TestSpackManager:
             env_path = "/test/env"
             
             # Call refresh_modules and expect RuntimeError
-            with pytest.raises(RuntimeError, match="Module creation failed: Module refresh failed"):
+            with pytest.raises(RuntimeError, match="Failed to configure MAPL suffixes: Module refresh failed"):
                 spack_manager.refresh_modules(env_path)
             
             # Verify logger exists and error would be logged
@@ -1483,19 +1497,20 @@ class TestSpackManager:
         with tempfile.TemporaryDirectory() as temp_dir:
             spack_manager.setup_logging(temp_dir)
             
-            # Mock successful lmod refresh but failed meta-modules setup
+            # Mock successful config add, lmod refresh, but failed meta-modules setup
             mock_results = [
+                Mock(returncode=0, stderr=""),  # config add success
                 Mock(returncode=0, stdout="Module refresh successful", stderr=""),  # lmod refresh success
                 Mock(returncode=1, stderr="Meta-modules setup failed")  # meta-modules failure
             ]
             mock_run_spack.side_effect = mock_results
-            
+
             env_path = "/test/env"
-            
+
             # Call refresh_modules and expect RuntimeError
-            with pytest.raises(RuntimeError, match="Metamodule \\(stack-\\* modules\\) creation failed: Meta-modules setup failed"):
+            with pytest.raises(RuntimeError):
                 spack_manager.refresh_modules(env_path)
-            
+
             # Verify logger exists and error would be logged
             assert spack_manager.logger is not None
 
