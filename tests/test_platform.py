@@ -51,6 +51,140 @@ class TestPlatform:
             assert len(installations) == 1
             assert installations[0]["version"] == "1.5.0"
             assert installations[0]["environment"] == "unified-env"
+    
+    def test_spack_installations_nonexistent_path(self):
+        """Test Spack installations discovery when spack_stack_path does not exist."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/nonexistent/path/that/does/not/exist",
+            "model_applications": {}
+        }
+        platform = Platform("test", "/nonexistent/path/that/does/not/exist", config)
+        
+        # Should return empty list when path doesn't exist
+        installations = platform.spack_installations
+        assert installations == []
+        assert isinstance(installations, list)
+    
+    def test_model_applications_empty(self):
+        """Test model_applications property with empty configuration."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "model_applications": {}
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        apps = platform.model_applications
+        assert apps == []
+        assert isinstance(apps, list)
+    
+    def test_model_applications_with_data(self):
+        """Test model_applications property with actual applications."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "model_applications": {
+                "ufs-weather-model": {"version": "1.0.0", "path": "/apps/ufs"},
+                "gfs-utils": {"version": "2.0.0", "path": "/apps/gfs"}
+            }
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        apps = platform.model_applications
+        assert len(apps) == 2
+        assert isinstance(apps, list)
+        
+        # Check that items are tuples of (name, config)
+        app_names = [app[0] for app in apps]
+        assert "ufs-weather-model" in app_names
+        assert "gfs-utils" in app_names
+        
+        # Verify we can access the configuration
+        for name, app_config in apps:
+            if name == "ufs-weather-model":
+                assert app_config["version"] == "1.0.0"
+                assert app_config["path"] == "/apps/ufs"
+            elif name == "gfs-utils":
+                assert app_config["version"] == "2.0.0"
+                assert app_config["path"] == "/apps/gfs"
+    
+    def test_model_applications_missing_key(self):
+        """Test model_applications property when key is missing from config."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path"
+            # No model_applications key
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        apps = platform.model_applications
+        assert apps == []
+        assert isinstance(apps, list)
+    
+    def test_model_applications_cached(self):
+        """Test that model_applications property is cached after first access."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "model_applications": {
+                "app1": {"version": "1.0.0"}
+            }
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        # First access
+        apps1 = platform.model_applications
+        # Second access should return the same object (cached)
+        apps2 = platform.model_applications
+        assert apps1 is apps2
+        
+        # Verify the private variable is set
+        assert platform._model_applications is not None
+    
+    def test_get_spack_root(self):
+        """Test get_spack_root method."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "model_applications": {}
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        # Create a mock installation dict
+        installation = {
+            "name": "unified-env (v1.5.0)",
+            "version": "1.5.0",
+            "environment": "unified-env",
+            "install_path": "/test/path/spack-stack-1.5.0/envs/unified-env/install",
+            "spack_root": "/test/path/spack-stack-1.5.0/spack",
+            "type": "spack_installation"
+        }
+        
+        spack_root = platform.get_spack_root(installation)
+        assert spack_root == "/test/path/spack-stack-1.5.0/spack"
+        assert isinstance(spack_root, str)
+    
+    def test_get_spack_root_different_versions(self):
+        """Test get_spack_root with different installation versions."""
+        config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "model_applications": {}
+        }
+        platform = Platform("test", "/test/path", config)
+        
+        # Test with version 2.0.0
+        installation1 = {
+            "spack_root": "/opt/spack-stack-2.0.0/spack"
+        }
+        assert platform.get_spack_root(installation1) == "/opt/spack-stack-2.0.0/spack"
+        
+        # Test with version 1.0.0
+        installation2 = {
+            "spack_root": "/home/user/spack-stack-1.0.0/spack"
+        }
+        assert platform.get_spack_root(installation2) == "/home/user/spack-stack-1.0.0/spack"
 
 
 class TestPlatformDetector:
@@ -67,3 +201,155 @@ class TestPlatformDetector:
         platform = detector.detect_platform()
         # Should return None since test environment won't match patterns
         assert platform is None or isinstance(platform, Platform)
+    
+    def test_detect_platform_with_site_override(self, monkeypatch):
+        """Test platform detection with SITE_OVERRIDE environment variable."""
+        from unittest.mock import Mock, patch
+        
+        # Create a mock config with a known platform
+        mock_config = Mock(spec=Config)
+        mock_config.get_platforms.return_value = {
+            "test_platform": {
+                "name": "Test Platform",
+                "spack_stack_path": "/test/spack",
+                "hostname_patterns": ["testhost.*"],
+                "model_applications": {}
+            }
+        }
+        
+        detector = PlatformDetector(config=mock_config)
+        
+        # Set SITE_OVERRIDE to match the platform key
+        monkeypatch.setenv("SITE_OVERRIDE", "test_platform")
+        
+        platform = detector.detect_platform()
+        assert platform is not None
+        assert platform.name == "Test Platform"
+        assert str(platform.spack_stack_path) == "/test/spack"
+    
+    def test_detect_platform_with_hostname_match(self, monkeypatch):
+        """Test platform detection with hostname pattern match."""
+        from unittest.mock import Mock, patch
+        
+        # Create a mock config
+        mock_config = Mock(spec=Config)
+        mock_config.get_platforms.return_value = {
+            "test_platform": {
+                "name": "Test Platform",
+                "spack_stack_path": "/test/spack",
+                "hostname_patterns": [".*\\.test\\.domain"],
+                "model_applications": {}
+            }
+        }
+        
+        detector = PlatformDetector(config=mock_config)
+        
+        # Mock socket.getfqdn to return a matching hostname
+        with patch('socket.getfqdn', return_value='server.test.domain'):
+            platform = detector.detect_platform()
+            assert platform is not None
+            assert platform.name == "Test Platform"
+    
+    def test_check_platform_hostname_no_patterns(self):
+        """Test _check_platform_hostname when hostname_patterns is empty."""
+        detector = PlatformDetector()
+        
+        # Platform config with no hostname patterns
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "hostname_patterns": []
+        }
+        
+        result = detector._check_platform_hostname(platform_config)
+        assert result is False
+    
+    def test_check_platform_hostname_missing_patterns(self):
+        """Test _check_platform_hostname when hostname_patterns key is missing."""
+        detector = PlatformDetector()
+        
+        # Platform config without hostname_patterns key
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path"
+        }
+        
+        result = detector._check_platform_hostname(platform_config)
+        assert result is False
+    
+    def test_check_platform_hostname_pattern_match(self, monkeypatch):
+        """Test _check_platform_hostname with matching pattern."""
+        from unittest.mock import patch
+        
+        detector = PlatformDetector()
+        
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "hostname_patterns": ["node.*\\.cluster\\.local"]
+        }
+        
+        # Mock socket.getfqdn to return a matching hostname
+        with patch('socket.getfqdn', return_value='node01.cluster.local'):
+            result = detector._check_platform_hostname(platform_config)
+            assert result is True
+    
+    def test_check_platform_hostname_pattern_no_match(self, monkeypatch):
+        """Test _check_platform_hostname with non-matching pattern."""
+        from unittest.mock import patch
+        
+        detector = PlatformDetector()
+        
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "hostname_patterns": ["node.*\\.cluster\\.local"]
+        }
+        
+        # Mock socket.getfqdn to return a non-matching hostname
+        with patch('socket.getfqdn', return_value='server.different.domain'):
+            result = detector._check_platform_hostname(platform_config)
+            assert result is False
+    
+    def test_check_platform_hostname_case_insensitive(self, monkeypatch):
+        """Test _check_platform_hostname is case-insensitive."""
+        from unittest.mock import patch
+        
+        detector = PlatformDetector()
+        
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "hostname_patterns": ["NODE.*\\.CLUSTER\\.LOCAL"]
+        }
+        
+        # Mock socket.getfqdn to return lowercase hostname
+        with patch('socket.getfqdn', return_value='node01.cluster.local'):
+            result = detector._check_platform_hostname(platform_config)
+            assert result is True
+    
+    def test_check_platform_hostname_multiple_patterns(self, monkeypatch):
+        """Test _check_platform_hostname with multiple patterns."""
+        from unittest.mock import patch
+        
+        detector = PlatformDetector()
+        
+        platform_config = {
+            "name": "Test Platform",
+            "spack_stack_path": "/test/path",
+            "hostname_patterns": [
+                "node.*\\.cluster1\\.local",
+                "node.*\\.cluster2\\.local",
+                "server.*\\.datacenter\\.com"
+            ]
+        }
+        
+        # Test matching second pattern
+        with patch('socket.getfqdn', return_value='node05.cluster2.local'):
+            result = detector._check_platform_hostname(platform_config)
+            assert result is True
+        
+        # Test matching third pattern
+        with patch('socket.getfqdn', return_value='server99.datacenter.com'):
+            result = detector._check_platform_hostname(platform_config)
+            assert result is True

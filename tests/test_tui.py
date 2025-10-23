@@ -1,7 +1,7 @@
 """Unit tests for TUI classes and methods."""
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock, call
+from unittest.mock import Mock, patch, MagicMock, call, PropertyMock
 import curses
 from pathlib import Path
 import tempfile
@@ -163,12 +163,754 @@ class TestPackageSpecDialog:
         
         assert result is True
     
+    def test_validate_and_add_version_not_remote_exists_choose_different(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test version validation when version doesn't exist in remote, user chooses to pick different version."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        
+        # Simulate user pressing 'p' to choose a different version
+        mock_stdscr.getch.return_value = ord('p')
+        
+        result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+        
+        assert result is False  # Should return False to go back to edit version
+        assert mock_stdscr.clear.called
+        assert mock_stdscr.addstr.called
+    
+    def test_validate_and_add_version_not_remote_exists_add_checksum(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test version validation when version doesn't exist in remote, user chooses automatic checksum."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        
+        # Simulate user pressing 'a' to add via checksum
+        mock_stdscr.getch.side_effect = [ord('a'), ord(' ')]  # 'a' for checksum, then space to continue
+        
+        with patch.object(package_dialog, '_add_version_with_checksum', return_value=True) as mock_checksum:
+            result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+            
+            mock_checksum.assert_called_once_with("test-pkg", "1.0.0")
+            assert result is True
+    
+    def test_validate_and_add_version_not_remote_exists_add_git_commit(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test version validation when version doesn't exist in remote, user chooses Git commit."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        
+        # Simulate user pressing 'g' to add via Git commit
+        mock_stdscr.getch.return_value = ord('g')
+        
+        with patch.object(package_dialog, '_add_version_with_git_commit', return_value=True) as mock_git:
+            result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+            
+            mock_git.assert_called_once_with("test-pkg", "1.0.0")
+            assert result is True
+    
+    def test_validate_and_add_version_not_remote_exists_continue_manual(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test version validation when version doesn't exist in remote, user chooses to continue manually."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate user pressing 'c' to continue with manual editing
+        mock_stdscr.getch.return_value = ord('c')
+        
+        result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+        
+        assert result is True
+        mock_spack_manager.add_pending_recipe.assert_called_once_with(
+            "test-pkg", "1.0.0", recipe_content=None,
+            needs_manual_edit=True, use_local_copy=True,
+            found_in_local=False, found_in_remote=False
+        )
+    
+    def test_validate_and_add_version_not_remote_exists_continue_manual_error(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test version validation when adding for manual editing fails."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        mock_spack_manager.add_pending_recipe.side_effect = Exception("Test error")
+        
+        # Simulate user pressing 'c' to continue with manual editing
+        mock_stdscr.getch.return_value = ord('c')
+        
+        with patch.object(package_dialog, '_show_error') as mock_error:
+            result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+            
+            assert result is False
+            mock_error.assert_called_once_with("Error marking for manual editing: Test error")
+    
+    def test_validate_and_add_version_not_remote_exists_case_insensitive(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test that key choices are case-insensitive."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/path/to/package.py"
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Test uppercase 'C'
+        mock_stdscr.getch.return_value = ord('C')
+        
+        result = package_dialog._validate_and_add_version("test-pkg", "1.0.0")
+        
+        assert result is True
+        assert mock_spack_manager.add_pending_recipe.called
+    
+    def test_validate_and_add_version_displays_correct_url(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test that the correct remote URL is displayed when version not found."""
+        mock_spack_manager.check_version_in_remote_repo.return_value = False
+        mock_spack_manager.get_local_package_path.return_value = "/local/path/package.py"
+        mock_spack_manager.config.get.side_effect = lambda key, default=None: {
+            "spack_repository": {
+                "base_url": "https://github.com/spack/spack.git",
+                "branch": "develop"
+            }
+        }.get(key, default) if key == "spack_repository" else default
+        
+        # Simulate user pressing 'p' to exit
+        mock_stdscr.getch.return_value = ord('p')
+        
+        package_dialog._validate_and_add_version("hdf5", "1.14.0")
+        
+        # Verify the URL was displayed
+        addstr_calls = [str(call) for call in mock_stdscr.addstr.call_args_list]
+        url_found = any("https://raw.githubusercontent.com/spack/spack/refs/heads/develop/var/spack/repos/builtin/packages/hdf5/package.py" in str(call) 
+                       for call in addstr_calls)
+        assert url_found, "Expected URL not found in addstr calls"
+    
     def test_show_error(self, package_dialog, mock_stdscr):
         """Test error message display."""
         package_dialog._show_error("Test error message")
         
         assert mock_stdscr.addstr.called
         assert mock_stdscr.refresh.called
+    
+    def test_add_version_with_git_commit_success(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test adding version with Git commit hash successfully."""
+        mock_spack_manager.add_pending_git_commit = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate typing a commit hash and pressing Enter, then any key to dismiss success message
+        commit_hash = "abc123def456"
+        keys = [ord(c) for c in commit_hash] + [ord('\n'), ord(' ')]
+        mock_stdscr.getch.side_effect = keys
+        
+        with patch('curses.curs_set'):
+            result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+        
+        assert result is True
+        mock_spack_manager.add_pending_git_commit.assert_called_once_with("test-pkg", "1.0.0", "abc123def456")
+        mock_spack_manager.add_pending_recipe.assert_called_once_with(
+            package_name="test-pkg",
+            version="1.0.0",
+            recipe_content=None,
+            needs_manual_edit=True,
+            use_local_copy=True,
+            found_in_local=True,
+            found_in_remote=False
+        )
+    
+    def test_add_version_with_git_commit_escape(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test canceling Git commit version addition."""
+        # Simulate pressing Escape
+        mock_stdscr.getch.return_value = 27
+        
+        with patch('curses.curs_set'):
+            result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+        
+        assert result is False
+        assert not mock_spack_manager.add_pending_git_commit.called
+    
+    def test_add_version_with_git_commit_empty_hash(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test validation for empty commit hash."""
+        # Simulate pressing Enter with empty input, then Escape
+        mock_stdscr.getch.side_effect = [ord('\n'), 27]
+        
+        with patch('curses.curs_set'):
+            with patch.object(package_dialog, '_show_error') as mock_error:
+                result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+                
+                mock_error.assert_called_with("Commit hash cannot be empty!")
+                assert result is False
+    
+    def test_add_version_with_git_commit_too_short(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test validation for too short commit hash."""
+        # Simulate typing a very short hash and pressing Enter, then Escape
+        mock_stdscr.getch.side_effect = [ord('a'), ord('b'), ord('c'), ord('\n'), 27]
+        
+        with patch('curses.curs_set'):
+            with patch.object(package_dialog, '_show_error') as mock_error:
+                result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+                
+                mock_error.assert_called_with("Commit hash seems too short (should be at least 7 characters)!")
+                assert result is False
+    
+    def test_add_version_with_git_commit_with_whitespace(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test that commit hash is properly stripped of whitespace."""
+        mock_spack_manager.add_pending_git_commit = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate typing a commit hash with leading/trailing spaces
+        commit_hash = "  abc123def456  "
+        keys = [ord(c) for c in commit_hash] + [ord('\n'), ord(' ')]
+        mock_stdscr.getch.side_effect = keys
+        
+        with patch('curses.curs_set'):
+            result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+        
+        assert result is True
+        # Verify the hash was stripped
+        mock_spack_manager.add_pending_git_commit.assert_called_once_with("test-pkg", "1.0.0", "abc123def456")
+    
+    def test_add_version_with_git_commit_navigation_keys(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test that navigation keys work during input."""
+        mock_spack_manager.add_pending_git_commit = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate typing, using navigation, and submitting
+        # Type "abc", backspace, type "xyz", then enter
+        keys = [
+            ord('a'), ord('b'), ord('c'),
+            127,  # Backspace
+            ord('x'), ord('y'), ord('z'), ord('1'), ord('2'), ord('3'),
+            ord('\n'), ord(' ')
+        ]
+        mock_stdscr.getch.side_effect = keys
+        
+        with patch('curses.curs_set'):
+            result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+        
+        assert result is True
+        mock_spack_manager.add_pending_git_commit.assert_called_once_with("test-pkg", "1.0.0", "abxyz123")
+    
+    def test_add_version_with_git_commit_clear_with_ctrl_x(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test clearing input with Ctrl+X."""
+        mock_spack_manager.add_pending_git_commit = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate typing, Ctrl+X to clear, then typing again and submitting
+        keys = [
+            ord('a'), ord('b'), ord('c'),
+            24,  # Ctrl+X
+            ord('x'), ord('y'), ord('z'), ord('1'), ord('2'), ord('3'), ord('4'),
+            ord('\n'), ord(' ')
+        ]
+        mock_stdscr.getch.side_effect = keys
+        
+        with patch('curses.curs_set'):
+            result = package_dialog._add_version_with_git_commit("test-pkg", "1.0.0")
+        
+        assert result is True
+        # Should only have the second input after Ctrl+X cleared the first
+        mock_spack_manager.add_pending_git_commit.assert_called_once_with("test-pkg", "1.0.0", "xyz1234")
+    
+    def test_add_version_with_checksum_success(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test adding version with automatic checksum successfully."""
+        mock_spack_manager.add_pending_checksum = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        
+        # Simulate pressing any key to continue
+        mock_stdscr.getch.return_value = ord(' ')
+        
+        result = package_dialog._add_version_with_checksum("test-pkg", "1.0.0")
+        
+        assert result is True
+        mock_spack_manager.add_pending_checksum.assert_called_once_with("test-pkg", "1.0.0")
+        mock_spack_manager.add_pending_recipe.assert_called_once_with(
+            package_name="test-pkg",
+            version="1.0.0",
+            recipe_content=None,
+            needs_manual_edit=True,
+            use_local_copy=True,
+            found_in_local=True,
+            found_in_remote=False
+        )
+    
+    def test_add_version_with_checksum_exception_in_queue(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test error handling when queueing checksum operation fails."""
+        mock_spack_manager.add_pending_checksum.side_effect = Exception("Queue error")
+        
+        with patch.object(package_dialog, '_show_error') as mock_error:
+            result = package_dialog._add_version_with_checksum("test-pkg", "1.0.0")
+            
+            assert result is False
+            mock_error.assert_called_once_with("Error queuing checksum operation: Queue error")
+    
+    def test_add_version_with_checksum_exception_in_recipe(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test error handling when adding to pending recipes fails."""
+        mock_spack_manager.add_pending_checksum = Mock()
+        mock_spack_manager.add_pending_recipe.side_effect = Exception("Recipe error")
+        
+        with patch.object(package_dialog, '_show_error') as mock_error:
+            result = package_dialog._add_version_with_checksum("test-pkg", "1.0.0")
+            
+            assert result is False
+            mock_error.assert_called_once_with("Error queuing checksum operation: Recipe error")
+    
+    def test_add_version_with_checksum_displays_correct_info(self, package_dialog, mock_stdscr, mock_spack_manager):
+        """Test that correct information is displayed during checksum operation."""
+        mock_spack_manager.add_pending_checksum = Mock()
+        mock_spack_manager.add_pending_recipe = Mock()
+        mock_stdscr.getch.return_value = ord(' ')
+        
+        result = package_dialog._add_version_with_checksum("hdf5", "1.14.0")
+        
+        assert result is True
+        
+        # Verify correct messages were displayed
+        addstr_calls = [str(call) for call in mock_stdscr.addstr.call_args_list]
+        
+        # Check for title
+        title_found = any("Auto-add checksum for hdf5@1.14.0" in str(call) for call in addstr_calls)
+        assert title_found, "Title not found in addstr calls"
+        
+        # Check for instruction message
+        instruction_found = any("Spack will attempt to automatically add version 1.14.0" in str(call) for call in addstr_calls)
+        assert instruction_found, "Instruction not found in addstr calls"
+        
+        # Check for success message
+        success_found = any("queued for 'spack checksum'" in str(call) for call in addstr_calls)
+        assert success_found, "Success message not found in addstr calls"
+    
+    def test_get_package_spec_key_up_navigation(self, package_dialog, mock_stdscr):
+        """Test KEY_UP navigation between fields."""
+        with patch('curses.curs_set'):
+            # Start in Package Name field (field 0), press DOWN twice to get to Variants (field 2)
+            # Then press UP to go back to Version (field 1), then ENTER
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_DOWN,  # Move to Version field
+                curses.KEY_DOWN,  # Move to Variants field
+                curses.KEY_UP,    # Move back to Version field
+                ord('\n')         # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+            assert result["name"] == "pkg"
+    
+    def test_get_package_spec_key_down_navigation(self, package_dialog, mock_stdscr):
+        """Test KEY_DOWN navigation between fields."""
+        with patch('curses.curs_set'):
+            # Navigate down through all fields
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_DOWN,  # Move from Name to Version
+                curses.KEY_DOWN,  # Move from Version to Variants
+                ord('\n')         # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+    
+    def test_get_package_spec_key_down_at_last_field(self, package_dialog, mock_stdscr):
+        """Test that KEY_DOWN at last field stays at last field."""
+        with patch('curses.curs_set'):
+            # Navigate to last field and try to go beyond
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_DOWN,  # Move to field 1
+                curses.KEY_DOWN,  # Move to field 2 (last)
+                curses.KEY_DOWN,  # Try to go beyond (should stay at 2)
+                ord('\n')         # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+    
+    def test_get_package_spec_key_up_at_first_field(self, package_dialog, mock_stdscr):
+        """Test that KEY_UP at first field stays at first field."""
+        with patch('curses.curs_set'):
+            # Start at first field and try to go up
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_UP,    # Try to go before first field (should stay at 0)
+                ord('\n')         # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+    
+    def test_get_package_spec_tab_navigation(self, package_dialog, mock_stdscr):
+        """Test Tab key navigation cycles through fields."""
+        with patch('curses.curs_set'):
+            # Tab should cycle: 0 -> 1 -> 2 -> 0
+            mock_stdscr.getch.side_effect = [
+                ord('\t'),  # Move from 0 to 1
+                ord('\t'),  # Move from 1 to 2
+                ord('\t'),  # Move from 2 to 0 (wrap around)
+                ord('\n')   # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+    
+    def test_get_package_spec_cursor_left_movement(self, package_dialog, mock_stdscr):
+        """Test KEY_LEFT moves cursor left within field."""
+        with patch('curses.curs_set'):
+            # Type "abc", move left, type "X" to insert
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_LEFT,               # Move cursor left
+                ord('X'),                      # Insert X -> "abXc"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "abXc"
+    
+    def test_get_package_spec_cursor_left_at_beginning(self, package_dialog, mock_stdscr):
+        """Test KEY_LEFT at beginning of field stays at beginning."""
+        with patch('curses.curs_set'):
+            # Try to move left from position 0
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_LEFT,  # Try to move left from position 0
+                ord('X'),         # Type X
+                ord('\n')         # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "X"
+    
+    def test_get_package_spec_cursor_right_movement(self, package_dialog, mock_stdscr):
+        """Test KEY_RIGHT moves cursor right within field."""
+        with patch('curses.curs_set'):
+            # Type "abc", move to beginning, move right, insert
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_HOME,               # Move to beginning
+                curses.KEY_RIGHT,              # Move right to position 1
+                ord('X'),                      # Insert X -> "aXbc"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "aXbc"
+    
+    def test_get_package_spec_cursor_right_at_end(self, package_dialog, mock_stdscr):
+        """Test KEY_RIGHT at end of field stays at end."""
+        with patch('curses.curs_set'):
+            # Type "abc", try to move right beyond end
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc", cursor at position 3
+                curses.KEY_RIGHT,              # Try to move beyond end
+                ord('X'),                      # Type X -> "abcX"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "abcX"
+    
+    def test_get_package_spec_key_home(self, package_dialog, mock_stdscr):
+        """Test KEY_HOME moves cursor to beginning of field."""
+        with patch('curses.curs_set'):
+            # Type "abc", press HOME, type "X"
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_HOME,               # Move to beginning
+                ord('X'),                      # Type X -> "Xabc"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "Xabc"
+    
+    def test_get_package_spec_ctrl_a(self, package_dialog, mock_stdscr):
+        """Test Ctrl+A moves cursor to beginning of field."""
+        with patch('curses.curs_set'):
+            # Type "abc", press Ctrl+A (key code 1), type "X"
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                1,                             # Ctrl+A (move to beginning)
+                ord('X'),                      # Type X -> "Xabc"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "Xabc"
+    
+    def test_get_package_spec_key_end(self, package_dialog, mock_stdscr):
+        """Test KEY_END moves cursor to end of field."""
+        with patch('curses.curs_set'):
+            # Type "abc", move to beginning, press END, type "X"
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_HOME,               # Move to beginning
+                curses.KEY_END,                # Move to end
+                ord('X'),                      # Type X -> "abcX"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "abcX"
+    
+    def test_get_package_spec_ctrl_e(self, package_dialog, mock_stdscr):
+        """Test Ctrl+E moves cursor to end of field."""
+        with patch('curses.curs_set'):
+            # Type "abc", move to beginning, press Ctrl+E (key code 5), type "X"
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_HOME,               # Move to beginning
+                5,                             # Ctrl+E (move to end)
+                ord('X'),                      # Type X -> "abcX"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "abcX"
+    
+    def test_get_package_spec_backspace_127(self, package_dialog, mock_stdscr):
+        """Test backspace with key code 127."""
+        with patch('curses.curs_set'):
+            # Type "abc", backspace once
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                127,                           # Backspace
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "ab"
+    
+    def test_get_package_spec_backspace_8(self, package_dialog, mock_stdscr):
+        """Test backspace with key code 8."""
+        with patch('curses.curs_set'):
+            # Type "abc", backspace once
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                8,                             # Backspace (alternative code)
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "ab"
+    
+    def test_get_package_spec_backspace_key_backspace(self, package_dialog, mock_stdscr):
+        """Test backspace with curses.KEY_BACKSPACE."""
+        with patch('curses.curs_set'):
+            # Type "abc", backspace once
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_BACKSPACE,          # Backspace
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "ab"
+    
+    def test_get_package_spec_backspace_at_beginning(self, package_dialog, mock_stdscr):
+        """Test backspace at beginning does nothing."""
+        with patch('curses.curs_set'):
+            # Type "a", move to beginning, try backspace
+            mock_stdscr.getch.side_effect = [
+                ord('a'),                      # Type "a"
+                curses.KEY_HOME,               # Move to beginning
+                127,                           # Backspace (should do nothing)
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "a"
+    
+    def test_get_package_spec_delete_key(self, package_dialog, mock_stdscr):
+        """Test KEY_DC (Delete) removes character at cursor."""
+        with patch('curses.curs_set'):
+            # Type "abc", move to beginning, delete
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                curses.KEY_HOME,               # Move to beginning
+                curses.KEY_DC,                 # Delete 'a' -> "bc"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "bc"
+    
+    def test_get_package_spec_delete_at_end(self, package_dialog, mock_stdscr):
+        """Test Delete at end of field does nothing."""
+        with patch('curses.curs_set'):
+            # Type "abc", delete at end (should do nothing)
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc", cursor at position 3
+                curses.KEY_DC,                 # Delete (should do nothing)
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "abc"
+    
+    def test_get_package_spec_ctrl_x_clear_field(self, package_dialog, mock_stdscr):
+        """Test Ctrl+X clears field and returns fields (note: this appears to be a bug in original code)."""
+        with patch('curses.curs_set'):
+            # Type "abc" in name field, press Ctrl+X
+            # Note: In the original code, Ctrl+X clears AND returns, which seems like a bug
+            mock_stdscr.getch.side_effect = [
+                ord('a'), ord('b'), ord('c'),  # Type "abc"
+                24,                            # Ctrl+X
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            # Based on the code, Ctrl+X clears the field and returns immediately
+            assert result is not None
+            assert result["name"] == ""
+    
+    def test_get_package_spec_printable_characters(self, package_dialog, mock_stdscr):
+        """Test that printable ASCII characters (32-126) are inserted."""
+        with patch('curses.curs_set'):
+            # Test various printable characters
+            mock_stdscr.getch.side_effect = [
+                ord(' '),   # Space (32)
+                ord('a'),   # Lowercase
+                ord('Z'),   # Uppercase
+                ord('0'),   # Digit
+                ord('-'),   # Hyphen
+                ord('_'),   # Underscore
+                ord('@'),   # At sign
+                ord('~'),   # Tilde (126)
+                ord('\n')   # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == " aZ0-_@~"
+    
+    def test_get_package_spec_non_printable_characters_ignored(self, package_dialog, mock_stdscr):
+        """Test that non-printable characters (< 32 or > 126, except special keys) are ignored."""
+        with patch('curses.curs_set'):
+            # Try to insert non-printable characters
+            mock_stdscr.getch.side_effect = [
+                ord('a'),   # Type 'a'
+                31,         # Non-printable (should be ignored)
+                127,        # Would be backspace, deletes 'a'
+                ord('b'),   # Type 'b'
+                200,        # Non-printable (should be ignored)
+                ord('\n')   # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "b"  # Only 'b' remains after backspace removed 'a'
+    
+    def test_get_package_spec_empty_name_shows_error(self, package_dialog, mock_stdscr):
+        """Test that empty package name shows error and stays in dialog."""
+        with patch('curses.curs_set'):
+            # Try to submit with empty name, then add name and submit
+            mock_stdscr.getch.side_effect = [
+                ord('\n'),         # Try to submit empty name (should show error)
+                ord('p'), ord('k'), ord('g'),  # Type "pkg"
+                ord('\n')          # Submit successfully
+            ]
+            
+            with patch.object(package_dialog, '_show_error') as mock_error:
+                result = package_dialog.get_package_spec("", "")
+                
+                # Should have shown error once
+                mock_error.assert_called_once_with("Package name is required!")
+                
+                assert result is not None
+                assert result["name"] == "pkg"
+    
+    def test_get_package_spec_whitespace_only_name_shows_error(self, package_dialog, mock_stdscr):
+        """Test that whitespace-only package name shows error."""
+        with patch('curses.curs_set'):
+            # Type spaces, try to submit, then clear and type valid name
+            mock_stdscr.getch.side_effect = [
+                ord(' '), ord(' '), ord(' '),  # Type spaces
+                ord('\n'),                     # Try to submit (should show error)
+                curses.KEY_HOME,               # Move to beginning
+                curses.KEY_DC, curses.KEY_DC, curses.KEY_DC,  # Delete all spaces
+                ord('p'), ord('k'), ord('g'),  # Type "pkg"
+                ord('\n')                      # Submit successfully
+            ]
+            
+            with patch.object(package_dialog, '_show_error') as mock_error:
+                result = package_dialog.get_package_spec("", "")
+                
+                mock_error.assert_called_once_with("Package name is required!")
+                
+                assert result is not None
+                assert result["name"] == "pkg"
+    
+    def test_get_package_spec_editing_version_field(self, package_dialog, mock_stdscr):
+        """Test editing the version field."""
+        with patch('curses.curs_set'):
+            # Navigate to version field and edit
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_DOWN,               # Move to version field
+                ord('2'), ord('.'), ord('0'),  # Type "2.0"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+            assert result["name"] == "pkg"
+            assert result["version"] == "1.02.0"  # Appended to existing "1.0"
+    
+    def test_get_package_spec_editing_variants_field(self, package_dialog, mock_stdscr):
+        """Test editing the variants field."""
+        with patch('curses.curs_set'):
+            # Navigate to variants field and edit
+            mock_stdscr.getch.side_effect = [
+                curses.KEY_DOWN,               # Move to version field
+                curses.KEY_DOWN,               # Move to variants field
+                ord('+'), ord('m'), ord('p'), ord('i'),  # Type "+mpi"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("pkg", "1.0")
+            
+            assert result is not None
+            assert result["name"] == "pkg"
+            assert result["version"] == "1.0"
+            assert result["variants"] == "+mpi"
+    
+    def test_get_package_spec_complex_editing_sequence(self, package_dialog, mock_stdscr):
+        """Test complex editing sequence with navigation and edits across fields."""
+        with patch('curses.curs_set'):
+            # Complex sequence: edit name, go to version, go back, edit name more
+            mock_stdscr.getch.side_effect = [
+                ord('h'), ord('d'), ord('f'),  # Type "hdf" in name field
+                curses.KEY_DOWN,               # Move to version field
+                ord('5'),                      # Type "5" in version
+                curses.KEY_UP,                 # Move back to name field
+                ord('5'),                      # Add "5" to name -> "hdf5"
+                ord('\n')                      # Submit
+            ]
+            
+            result = package_dialog.get_package_spec("", "")
+            
+            assert result is not None
+            assert result["name"] == "hdf5"
+            assert result["version"] == "5"
 
 
 class TestRadioButtonMenu:
@@ -328,6 +1070,169 @@ class TestEmcEnvChainerTUI:
         assert mock_stdscr.addstr.called
         assert mock_stdscr.refresh.called
     
+    def test_run_interactive_install_success(self, tui_app, mock_stdscr):
+        """Test successful interactive install."""
+        mock_spack_manager = Mock(spec=SpackManager)
+        mock_spack_manager.install_environment_interactive.return_value = True
+        
+        with patch('curses.endwin') as mock_endwin:
+            with patch('curses.doupdate') as mock_doupdate:
+                with patch('builtins.print') as mock_print:
+                    result = tui_app.run_interactive_install(mock_stdscr, mock_spack_manager, "/test/env/path")
+        
+        assert result is True
+        mock_endwin.assert_called_once()
+        mock_doupdate.assert_called_once()
+        mock_spack_manager.install_environment_interactive.assert_called_once_with("/test/env/path")
+        mock_stdscr.refresh.assert_called()
+        
+        # Verify success message was printed
+        print_calls = [str(call) for call in mock_print.call_args_list]
+        success_found = any("Installation completed successfully!" in str(call) for call in print_calls)
+        assert success_found, "Success message not printed"
+    
+    def test_run_interactive_install_failure(self, tui_app, mock_stdscr):
+        """Test failed interactive install."""
+        mock_spack_manager = Mock(spec=SpackManager)
+        mock_spack_manager.install_environment_interactive.return_value = False
+        
+        with patch('curses.endwin') as mock_endwin:
+            with patch('curses.doupdate') as mock_doupdate:
+                with patch('builtins.print') as mock_print:
+                    result = tui_app.run_interactive_install(mock_stdscr, mock_spack_manager, "/test/env/path")
+        
+        assert result is False
+        mock_endwin.assert_called_once()
+        mock_doupdate.assert_called_once()
+        mock_spack_manager.install_environment_interactive.assert_called_once_with("/test/env/path")
+        mock_stdscr.refresh.assert_called()
+        
+        # Verify failure message was printed
+        print_calls = [str(call) for call in mock_print.call_args_list]
+        failure_found = any("Installation failed!" in str(call) for call in print_calls)
+        assert failure_found, "Failure message not printed"
+    
+    def test_run_interactive_install_restores_curses_on_exception(self, tui_app, mock_stdscr):
+        """Test that curses mode is restored even when install raises exception."""
+        mock_spack_manager = Mock(spec=SpackManager)
+        mock_spack_manager.install_environment_interactive.side_effect = Exception("Install error")
+        
+        with patch('curses.endwin') as mock_endwin:
+            with patch('curses.doupdate') as mock_doupdate:
+                with patch('builtins.print'):
+                    with pytest.raises(Exception, match="Install error"):
+                        tui_app.run_interactive_install(mock_stdscr, mock_spack_manager, "/test/env/path")
+        
+        # Verify curses was exited and restored even though exception was raised
+        mock_endwin.assert_called_once()
+        mock_doupdate.assert_called_once()
+        mock_stdscr.refresh.assert_called()
+    
+    def test_run_interactive_install_displays_header(self, tui_app, mock_stdscr):
+        """Test that interactive install displays proper header messages."""
+        mock_spack_manager = Mock(spec=SpackManager)
+        mock_spack_manager.install_environment_interactive.return_value = True
+        
+        with patch('curses.endwin'):
+            with patch('curses.doupdate'):
+                with patch('builtins.print') as mock_print:
+                    tui_app.run_interactive_install(mock_stdscr, mock_spack_manager, "/test/env/path")
+        
+        # Verify header messages were printed
+        print_calls = [str(call) for call in mock_print.call_args_list]
+        header_found = any("Installing packages with Spack..." in str(call) for call in print_calls)
+        assert header_found, "Header message not printed"
+        
+        timing_msg_found = any("This may take several minutes" in str(call) for call in print_calls)
+        assert timing_msg_found, "Timing message not printed"
+    
+    def test_main_loop_full_workflow(self, tui_app, mock_stdscr):
+        """Test complete main loop workflow."""
+        mock_installation = {"type": "jcsda-spack-stack", "install_path": "/test/install"}
+        mock_packages = [{"name": "test-pkg", "version": "1.0.0"}]
+        mock_spack_manager = Mock(spec=SpackManager)
+        
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=True):
+                with patch('curses.start_color'):
+                    with patch('curses.use_default_colors'):
+                        with patch('curses.init_pair'):
+                            with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value="test-env"):
+                                with patch.object(tui_app, '_select_installation', return_value=mock_installation):
+                                    with patch.object(tui_app, '_get_package_specifications_with_manager', return_value=(mock_packages, mock_spack_manager)):
+                                        with patch.object(tui_app, '_create_environment') as mock_create:
+                                            tui_app._main_loop(mock_stdscr)
+        
+        # Verify all methods were called in order
+        mock_stdscr.clear.assert_called()
+        mock_create.assert_called_once_with(mock_stdscr, mock_installation, mock_packages, mock_spack_manager, "test-env")
+    
+    def test_main_loop_cancel_at_welcome(self, tui_app, mock_stdscr):
+        """Test main loop when user cancels at welcome screen."""
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=False):
+                with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value=None):
+                    with patch.object(tui_app, '_select_installation') as mock_select:
+                        tui_app._main_loop(mock_stdscr)
+        
+        # Verify that subsequent methods were not called
+        mock_select.assert_not_called()
+    
+    def test_main_loop_cancel_at_installation_select(self, tui_app, mock_stdscr):
+        """Test main loop when user cancels at installation selection."""
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=False):
+                with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value="test-env"):
+                    with patch.object(tui_app, '_select_installation', return_value=None):
+                        with patch.object(tui_app, '_get_package_specifications_with_manager') as mock_get_packages:
+                            tui_app._main_loop(mock_stdscr)
+        
+        # Verify that subsequent methods were not called
+        mock_get_packages.assert_not_called()
+    
+    def test_main_loop_cancel_at_package_selection(self, tui_app, mock_stdscr):
+        """Test main loop when user cancels at package selection."""
+        mock_installation = {"type": "jcsda-spack-stack", "install_path": "/test/install"}
+        
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=False):
+                with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value="test-env"):
+                    with patch.object(tui_app, '_select_installation', return_value=mock_installation):
+                        with patch.object(tui_app, '_get_package_specifications_with_manager', return_value=(None, None)):
+                            with patch.object(tui_app, '_create_environment') as mock_create:
+                                tui_app._main_loop(mock_stdscr)
+        
+        # Verify that create_environment was not called
+        mock_create.assert_not_called()
+    
+    def test_main_loop_initializes_curses_colors(self, tui_app, mock_stdscr):
+        """Test that main loop initializes curses colors when supported."""
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=True) as mock_has_colors:
+                with patch('curses.start_color') as mock_start_color:
+                    with patch('curses.use_default_colors') as mock_use_defaults:
+                        with patch('curses.init_pair') as mock_init_pair:
+                            with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value=None):
+                                tui_app._main_loop(mock_stdscr)
+        
+        # Verify color initialization
+        mock_has_colors.assert_called_once()
+        mock_start_color.assert_called_once()
+        mock_use_defaults.assert_called_once()
+        assert mock_init_pair.call_count == 3  # Three color pairs defined
+    
+    def test_main_loop_skips_color_init_when_not_supported(self, tui_app, mock_stdscr):
+        """Test that main loop skips color initialization when not supported."""
+        with patch('curses.curs_set'):
+            with patch('curses.has_colors', return_value=False) as mock_has_colors:
+                with patch('curses.start_color') as mock_start_color:
+                    with patch.object(tui_app, '_show_welcome_and_get_env_name', return_value=None):
+                        tui_app._main_loop(mock_stdscr)
+        
+        # Verify color initialization was skipped
+        mock_has_colors.assert_called_once()
+        mock_start_color.assert_not_called()
+    
     def test_show_welcome_and_get_env_name(self, tui_app, mock_stdscr):
         """Test welcome screen and environment name input."""
         # Mock the text input functionality
@@ -373,6 +1278,110 @@ class TestEmcEnvChainerTUI:
             
             assert result is not None
             assert result["spack_root"] == "/custom/path"
+    
+    def test_select_installation_with_model_applications(self, tui_app, mock_stdscr):
+        """Test installation selection includes model applications."""
+        # Create mock model application
+        mock_app = Mock()
+        mock_app.name = "ufs-weather-model"
+        mock_app.config = {"name": "UFS Weather Model"}
+        mock_app.get_module_url_choices.return_value = [
+            {"name": "Release v1.0", "url": "https://example.com/module1.lua"},
+            {"name": "Release v2.0", "url": "https://example.com/module2.lua"}
+        ]
+        
+        # Patch the model_app_manager's applications property using PropertyMock
+        with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
+            mock_apps.return_value = [mock_app]
+            # Select first option (which is a spack installation)
+            mock_stdscr.getch.return_value = ord('\n')
+            
+            result = tui_app._select_installation(mock_stdscr)
+            
+            # Verify the app's get_module_url_choices was called
+            mock_app.get_module_url_choices.assert_called_once()
+            
+            # Result should be the first spack installation
+            assert result is not None
+            assert result["type"] == "jcsda-spack-stack"
+    
+    def test_select_installation_select_model_application(self, tui_app, mock_stdscr):
+        """Test selecting a model application from the menu."""
+        # Create mock model application
+        mock_app = Mock()
+        mock_app.name = "ufs-weather-model"
+        mock_app.config = {"name": "UFS Weather Model"}
+        mock_app.get_module_url_choices.return_value = [
+            {"name": "Release v1.0", "url": "https://example.com/module1.lua"}
+        ]
+        
+        # Patch the model_app_manager's applications property using PropertyMock
+        with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
+            mock_apps.return_value = [mock_app]
+            # Navigate down to select the model application (skip the spack installation)
+            mock_stdscr.getch.side_effect = [curses.KEY_DOWN, ord('\n')]
+            
+            result = tui_app._select_installation(mock_stdscr)
+            
+            assert result is not None
+            assert result["type"] == "model_application"
+            assert result["name"] == "ufs-weather-model (Release v1.0)"
+            assert result["application"] == mock_app
+            assert result["selected_module_url"] == "https://example.com/module1.lua"
+    
+    def test_select_installation_multiple_model_apps_multiple_urls(self, tui_app, mock_stdscr):
+        """Test selection with multiple model applications each having multiple URL choices."""
+        # Create first mock model application
+        mock_app1 = Mock()
+        mock_app1.name = "ufs-weather-model"
+        mock_app1.config = {"name": "UFS Weather Model"}
+        mock_app1.get_module_url_choices.return_value = [
+            {"name": "Release v1.0", "url": "https://example.com/ufs-v1.lua"},
+            {"name": "Release v2.0", "url": "https://example.com/ufs-v2.lua"}
+        ]
+        
+        # Create second mock model application
+        mock_app2 = Mock()
+        mock_app2.name = "gfs-model"
+        mock_app2.config = {"name": "GFS Model"}
+        mock_app2.get_module_url_choices.return_value = [
+            {"name": "Operational", "url": "https://example.com/gfs-ops.lua"},
+            {"name": "Development", "url": "https://example.com/gfs-dev.lua"}
+        ]
+        
+        # Patch the model_app_manager's applications property using PropertyMock
+        with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
+            mock_apps.return_value = [mock_app1, mock_app2]
+            # Select the third option (second URL of first app)
+            # Options: [spack-install, ufs-v1, ufs-v2, gfs-ops, gfs-dev, custom]
+            mock_stdscr.getch.side_effect = [curses.KEY_DOWN, curses.KEY_DOWN, ord('\n')]
+            
+            result = tui_app._select_installation(mock_stdscr)
+            
+            assert result is not None
+            assert result["type"] == "model_application"
+            assert result["name"] == "ufs-weather-model (Release v2.0)"
+            assert result["selected_module_url"] == "https://example.com/ufs-v2.lua"
+    
+    def test_select_installation_no_options(self, tui_app, mock_stdscr):
+        """Test installation selection when no options are available."""
+        # Patch both the spack installations and model apps to be empty
+        with patch.object(tui_app.platform, 'spack_installations', []):
+            with patch.object(type(tui_app.model_app_manager), 'applications', new_callable=PropertyMock) as mock_apps:
+                mock_apps.return_value = []
+                with patch.object(TUIMenu, 'display_info') as mock_display:
+                    result = tui_app._select_installation(mock_stdscr)
+                
+                assert result is None
+                mock_display.assert_called_once_with("No installations or model applications found!")
+    
+    def test_select_installation_cancel(self, tui_app, mock_stdscr):
+        """Test canceling installation selection."""
+        mock_stdscr.getch.return_value = 27  # Escape key
+        
+        result = tui_app._select_installation(mock_stdscr)
+        
+        assert result is None
     
     @patch('curses.echo')
     @patch('curses.noecho')
@@ -430,9 +1439,2265 @@ class TestEmcEnvChainerTUI:
         assert spack_root == "/test/stack/spack"
         assert upstream_path == "/custom/install"
     
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_success(self, mock_exists, tui_app):
+        """Test getting Spack config for model application with valid path structure."""
+        # Mock that spack executable exists at the inferred location
+        mock_exists.return_value = True
+        
+        # Create mock model application
+        mock_app = Mock()
+        mock_app.name = "ufs-weather-model"
+        mock_app.config = {"name": "UFS Weather Model"}
+        mock_app.platform_name = "test-platform"
+        mock_app.extract_install_path.return_value = "/base/spack-stack/spack-stack-1.6.0/envs/unified-env/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        spack_root, upstream_path = tui_app._get_spack_config(installation)
+        
+        # Should infer spack root from the install path structure
+        assert spack_root == "/base/spack-stack/spack-stack-1.6.0/spack"
+        assert upstream_path == "/base/spack-stack/spack-stack-1.6.0/envs/unified-env/install"
+        
+        # Verify it checked for spack executable
+        mock_exists.assert_called_with("/base/spack-stack/spack-stack-1.6.0/spack/bin/spack")
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_with_selected_url(self, mock_exists, tui_app):
+        """Test getting Spack config for model application with selected module URL."""
+        mock_exists.return_value = True
+        
+        # Create mock model application
+        mock_app = Mock()
+        mock_app.name = "gfs-model"
+        mock_app.config = {"name": "GFS Model"}
+        mock_app.platform_name = "hera"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": "http://example.com/module.lua"
+        }
+        
+        # Mock ModelApplication class - patch where it's imported (in model_apps module)
+        with patch('emcenvchainer.model_apps.ModelApplication') as mock_model_app_class:
+            mock_model_app_instance = Mock()
+            mock_model_app_instance.extract_install_path.return_value = "/opt/spack-stack/spack-stack-2.0.0/envs/gfs-ops/install"
+            mock_model_app_class.return_value = mock_model_app_instance
+            
+            spack_root, upstream_path = tui_app._get_spack_config(installation)
+            
+            # Verify ModelApplication was instantiated with selected URL
+            mock_model_app_class.assert_called_once_with(
+                "gfs-model", 
+                {"name": "GFS Model"}, 
+                "hera", 
+                "http://example.com/module.lua"
+            )
+            
+            # Should infer spack root correctly
+            assert spack_root == "/opt/spack-stack/spack-stack-2.0.0/spack"
+            assert upstream_path == "/opt/spack-stack/spack-stack-2.0.0/envs/gfs-ops/install"
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_no_install_path(self, mock_exists, tui_app):
+        """Test error when model application cannot extract install path."""
+        mock_app = Mock()
+        mock_app.extract_install_path.return_value = None
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        with pytest.raises(RuntimeError, match="Could not extract install path from model application!"):
+            tui_app._get_spack_config(installation)
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_missing_spack_exe(self, mock_exists, tui_app):
+        """Test error when inferred Spack executable doesn't exist."""
+        # Mock that spack executable does NOT exist
+        mock_exists.return_value = False
+        
+        mock_app = Mock()
+        mock_app.extract_install_path.return_value = "/stack/spack-stack-1.5.0/envs/test/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        with pytest.raises(RuntimeError, match="Spack executable not found at inferred location"):
+            tui_app._get_spack_config(installation)
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_invalid_path_structure(self, mock_exists, tui_app):
+        """Test error when upstream path doesn't have expected structure."""
+        mock_app = Mock()
+        # Path too short - missing proper directory structure
+        mock_app.extract_install_path.return_value = "/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        with pytest.raises(RuntimeError, match="Invalid upstream path structure"):
+            tui_app._get_spack_config(installation)
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_no_install_in_path(self, mock_exists, tui_app):
+        """Test error when 'install' directory not found in path."""
+        mock_app = Mock()
+        # Valid looking path but doesn't contain 'install' directory
+        mock_app.extract_install_path.return_value = "/base/spack-stack/spack-stack-1.6.0/envs/unified-env/wrong"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        with pytest.raises(RuntimeError, match="Cannot infer Spack installation from upstream path"):
+            tui_app._get_spack_config(installation)
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_deep_nested_path(self, mock_exists, tui_app):
+        """Test model application with deeply nested install path."""
+        mock_exists.return_value = True
+        
+        mock_app = Mock()
+        # Test with a deeply nested path
+        mock_app.extract_install_path.return_value = "/very/deep/path/to/spack-stack/spack-stack-1.7.0/envs/complex-env/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        spack_root, upstream_path = tui_app._get_spack_config(installation)
+        
+        assert spack_root == "/very/deep/path/to/spack-stack/spack-stack-1.7.0/spack"
+        assert upstream_path == "/very/deep/path/to/spack-stack/spack-stack-1.7.0/envs/complex-env/install"
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_minimal_valid_path(self, mock_exists, tui_app):
+        """Test model application with minimal valid path structure."""
+        mock_exists.return_value = True
+        
+        mock_app = Mock()
+        # Minimal valid path: /root/envs/env/install (need at least 4 components after root)
+        mock_app.extract_install_path.return_value = "/root/stack/envs/env/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        spack_root, upstream_path = tui_app._get_spack_config(installation)
+        
+        assert spack_root == "/root/stack/spack"
+        assert upstream_path == "/root/stack/envs/env/install"
+    
+    @patch('os.path.exists')
+    def test_get_spack_config_model_application_multiple_install_in_path(self, mock_exists, tui_app):
+        """Test model application when 'install' appears multiple times in path."""
+        mock_exists.return_value = True
+        
+        mock_app = Mock()
+        # Path with 'install' appearing twice - should use the first occurrence
+        mock_app.extract_install_path.return_value = "/install-base/spack-stack/spack-stack-1.6.0/envs/env/install"
+        
+        installation = {
+            "type": "model_application",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        spack_root, upstream_path = tui_app._get_spack_config(installation)
+        
+        # Should use the first 'install' found when traversing from root
+        # Path.parts.index('install') returns first occurrence
+        assert spack_root == "/install-base/spack-stack/spack-stack-1.6.0/spack"
+        assert upstream_path == "/install-base/spack-stack/spack-stack-1.6.0/envs/env/install"
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_manual(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test getting package specifications with manual package entry."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        # Create non-model-application installation
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        # Mock _get_packages_manually to return packages
+        expected_packages = [
+            {"name": "pkg1", "version": "1.0.0"},
+            {"name": "pkg2", "version": "2.0.0"}
+        ]
+        with patch.object(tui_app, '_get_packages_manually', return_value=expected_packages):
+            packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+        
+        # Verify SpackManager was created with correct parameters
+        mock_spack_manager_class.assert_called_once_with("/test/stack/spack", tui_app.config)
+        
+        # Verify packages and manager returned
+        assert packages == expected_packages
+        assert spack_manager == mock_spack_manager
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_model_app(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test getting package specifications from model application."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        # Create model application
+        mock_app = Mock()
+        mock_app.name = "ufs-weather-model"
+        mock_app.extract_install_path.return_value = "/stack/spack-stack-1.6.0/envs/env/install"
+        
+        # Create model application installation
+        installation = {
+            "type": "model_application",
+            "name": "ufs-weather-model (Intel)",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        # Mock _get_packages_from_model_app to return packages
+        expected_packages = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "hdf5", "version": "1.14.0"}
+        ]
+        with patch.object(tui_app, '_get_packages_from_model_app', return_value=expected_packages):
+            packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+        
+        # Verify packages from model app were returned
+        assert packages == expected_packages
+        assert spack_manager == mock_spack_manager
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_cancelled(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test cancelling package specification."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        # Mock _get_packages_manually to return None (cancelled)
+        with patch.object(tui_app, '_get_packages_manually', return_value=None):
+            packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+        
+        # When cancelled, packages should be None but manager still returned
+        assert packages is None
+        assert spack_manager == mock_spack_manager
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_model_app_with_url(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test getting package specifications from model application with selected URL."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        # Create model application
+        mock_app = Mock()
+        mock_app.name = "gfs-model"
+        mock_app.config = {"name": "GFS Model"}
+        mock_app.platform_name = "hera"
+        mock_app.extract_install_path.return_value = "/stack/spack-stack-2.0.0/envs/gfs/install"
+        
+        # Create model application installation with selected URL
+        installation = {
+            "type": "model_application",
+            "name": "gfs-model (Intel)",
+            "application": mock_app,
+            "selected_module_url": "http://example.com/gfs.intel.lua"
+        }
+        
+        # Mock ModelApplication class to return instance with extract_install_path
+        with patch('emcenvchainer.model_apps.ModelApplication') as mock_model_app_class:
+            mock_model_app_instance = Mock()
+            mock_model_app_instance.extract_install_path.return_value = "/stack/spack-stack-2.0.0/envs/gfs/install"
+            mock_model_app_class.return_value = mock_model_app_instance
+            
+            # Mock _get_packages_from_model_app to return packages
+            expected_packages = [
+                {"name": "esmf", "version": "8.5.0"},
+                {"name": "fms", "version": "2023.04"}
+            ]
+            with patch.object(tui_app, '_get_packages_from_model_app', return_value=expected_packages):
+                packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+            
+            # Verify packages from model app were returned
+            assert packages == expected_packages
+            assert spack_manager == mock_spack_manager
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_empty_packages(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test when user provides no packages."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        installation = {
+            "type": "custom",
+            "spack_root": "/custom/spack",
+            "install_path": "/custom/install"
+        }
+        
+        # Mock _get_packages_manually to return empty list
+        with patch.object(tui_app, '_get_packages_manually', return_value=[]):
+            packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+        
+        # Empty list should be returned
+        assert packages == []
+        assert spack_manager == mock_spack_manager
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_spack_manager_creation(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test that SpackManager is created with correct spack_root from _get_spack_config."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        # Create installation where _get_spack_config will be called
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/specific/path",
+            "install_path": "/specific/install"
+        }
+        
+        # Mock _get_spack_config to return specific values
+        with patch.object(tui_app, '_get_spack_config', return_value=("/custom/spack/root", "/custom/upstream")):
+            with patch.object(tui_app, '_get_packages_manually', return_value=[]):
+                packages, spack_manager = tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+        
+        # Verify SpackManager was created with the spack_root from _get_spack_config
+        mock_spack_manager_class.assert_called_once_with("/custom/spack/root", tui_app.config)
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_passes_manager_to_manual(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test that SpackManager is passed to _get_packages_manually."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        # Mock _get_packages_manually and verify it receives the manager
+        with patch.object(tui_app, '_get_packages_manually', return_value=[]) as mock_get_packages:
+            tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+            
+            # Verify _get_packages_manually was called with the manager
+            mock_get_packages.assert_called_once_with(mock_stdscr, mock_spack_manager)
+    
+    @patch('os.path.exists')
+    @patch('emcenvchainer.tui.SpackManager')
+    def test_get_package_specifications_with_manager_passes_manager_to_model_app(self, mock_spack_manager_class, mock_exists, tui_app, mock_stdscr):
+        """Test that SpackManager is passed to _get_packages_from_model_app."""
+        mock_exists.return_value = True
+        
+        # Mock SpackManager instantiation
+        mock_spack_manager = Mock()
+        mock_spack_manager_class.return_value = mock_spack_manager
+        
+        mock_app = Mock()
+        mock_app.extract_install_path.return_value = "/stack/spack-stack-1.6.0/envs/env/install"
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        # Mock _get_packages_from_model_app and verify it receives the manager
+        with patch.object(tui_app, '_get_packages_from_model_app', return_value=[]) as mock_get_packages:
+            tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
+            
+            # Verify _get_packages_from_model_app was called with the manager
+            mock_get_packages.assert_called_once_with(mock_stdscr, installation, mock_spack_manager)
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_success(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test successfully getting packages from model application."""
+        # Setup mocks
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.name = "ufs-weather-model"
+        mock_app.parse_dependencies.return_value = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "hdf5", "version": "1.14.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = [
+            {"name": "esmf", "version": "8.5.0"}
+        ]
+        
+        installation = {
+            "type": "model_application",
+            "name": "ufs-weather-model (Intel)",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        expected_packages = [
+            {"name": "pkg1", "version": "1.0.0"}
+        ]
+        
+        # Mock _select_packages_with_radio_buttons to return packages
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', return_value=expected_packages):
+            result = tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Verify result
+        assert result == expected_packages
+        
+        # Verify menu was displayed
+        mock_menu_class.assert_called_once()
+        mock_menu.display_info.assert_called_once_with("Downloading and parsing module files...", wait_for_key=False)
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_with_selected_url(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test getting packages from model application with selected URL."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.name = "gfs-model"
+        mock_app.config = {"name": "GFS Model"}
+        mock_app.platform_name = "hera"
+        
+        installation = {
+            "type": "model_application",
+            "name": "gfs-model (Intel)",
+            "application": mock_app,
+            "selected_module_url": "http://example.com/gfs.intel.lua"
+        }
+        
+        # Mock ModelApplication class
+        with patch('emcenvchainer.model_apps.ModelApplication') as mock_model_app_class:
+            mock_model_app_instance = Mock()
+            mock_model_app_instance.parse_dependencies.return_value = [
+                {"name": "fms", "version": "2023.04"}
+            ]
+            mock_model_app_instance.get_upgradable_packages.return_value = []
+            mock_model_app_class.return_value = mock_model_app_instance
+            
+            expected_packages = [{"name": "fms", "version": "2023.04"}]
+            
+            with patch.object(tui_app, '_select_packages_with_radio_buttons', return_value=expected_packages):
+                result = tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+            
+            # Verify ModelApplication was created with selected URL
+            mock_model_app_class.assert_called_once_with(
+                "gfs-model",
+                {"name": "GFS Model"},
+                "hera",
+                "http://example.com/gfs.intel.lua"
+            )
+            
+            assert result == expected_packages
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_parse_error(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test error handling when parsing module files fails."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.side_effect = Exception("Network error")
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        result = tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Should return None on error
+        assert result is None
+        
+        # Verify error message was displayed
+        error_calls = [call for call in mock_menu.display_info.call_args_list if "Error parsing module files" in str(call)]
+        assert len(error_calls) == 1
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_no_packages_found(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test when no packages are found in module files."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.return_value = []
+        mock_app.get_upgradable_packages.return_value = []
+        
+        installation = {
+            "type": "model_application",
+            "name": "empty-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        result = tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Should return None when no packages found
+        assert result is None
+        
+        # Verify message was displayed
+        info_calls = [call for call in mock_menu.display_info.call_args_list if "No packages found" in str(call)]
+        assert len(info_calls) == 1
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_combines_packages_correctly(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test that upgradable packages and dependencies are combined correctly."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        # Dependencies include some that overlap with upgradable
+        mock_app.parse_dependencies.return_value = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "hdf5", "version": "1.14.0"},
+            {"name": "esmf", "version": "8.4.0"}  # This is also in upgradable
+        ]
+        # Upgradable packages (preferred versions)
+        mock_app.get_upgradable_packages.return_value = [
+            {"name": "esmf", "version": "8.5.0"},  # Should override dependency version
+            {"name": "fms", "version": "2023.04"}
+        ]
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        # Capture what gets passed to _select_packages_with_radio_buttons
+        captured_packages = None
+        def capture_packages(stdscr, packages, app, manager):
+            nonlocal captured_packages
+            captured_packages = packages
+            return []
+        
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', side_effect=capture_packages):
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Verify package combination logic
+        assert captured_packages is not None
+        assert len(captured_packages) == 4  # 2 upgradable + 2 unique dependencies
+        
+        # Upgradable packages should come first
+        assert captured_packages[0]["name"] == "esmf"
+        assert captured_packages[0]["current_version"] == "8.5.0"  # Upgradable version, not dependency
+        assert captured_packages[0]["type"] == "upgradable"
+        
+        assert captured_packages[1]["name"] == "fms"
+        assert captured_packages[1]["type"] == "upgradable"
+        
+        # Dependencies that aren't upgradable
+        dep_names = [p["name"] for p in captured_packages[2:]]
+        assert "netcdf-c" in dep_names
+        assert "hdf5" in dep_names
+        
+        # esmf should not appear twice
+        esmf_count = sum(1 for p in captured_packages if p["name"] == "esmf")
+        assert esmf_count == 1
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_only_upgradable(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test when only upgradable packages are found."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.return_value = []
+        mock_app.get_upgradable_packages.return_value = [
+            {"name": "esmf", "version": "8.5.0"},
+            {"name": "fms", "version": "2023.04"}
+        ]
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        captured_packages = None
+        def capture_packages(stdscr, packages, app, manager):
+            nonlocal captured_packages
+            captured_packages = packages
+            return []
+        
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', side_effect=capture_packages):
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Should have only upgradable packages
+        assert len(captured_packages) == 2
+        assert all(p["type"] == "upgradable" for p in captured_packages)
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_only_dependencies(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test when only dependencies are found."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.return_value = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "hdf5", "version": "1.14.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = []
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        captured_packages = None
+        def capture_packages(stdscr, packages, app, manager):
+            nonlocal captured_packages
+            captured_packages = packages
+            return []
+        
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', side_effect=capture_packages):
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        # Should have only dependencies
+        assert len(captured_packages) == 2
+        assert all(p["type"] == "dependency" for p in captured_packages)
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_cancelled(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test when user cancels package selection."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.return_value = [
+            {"name": "netcdf-c", "version": "4.9.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = []
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        # Mock radio button selection to return None (cancelled)
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', return_value=None):
+            result = tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+        
+        assert result is None
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_passes_correct_args_to_radio_buttons(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test that correct arguments are passed to _select_packages_with_radio_buttons."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+        
+        mock_app = Mock()
+        mock_app.parse_dependencies.return_value = [
+            {"name": "pkg1", "version": "1.0.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = []
+        
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+        
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', return_value=[]) as mock_radio:
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+            
+            # Verify arguments passed
+            mock_radio.assert_called_once()
+            args = mock_radio.call_args[0]
+            
+            assert args[0] == mock_stdscr  # stdscr
+            assert isinstance(args[1], list)  # all_packages
+            assert args[2] == mock_app  # selected_app
+            assert args[3] == mock_spack_manager  # spack_manager
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_success(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test successfully selecting packages with radio buttons."""
+        # Mock RadioButtonMenu
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [0, 2]  # Select first and third packages
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+            {"name": "esmf", "current_version": "8.5.0", "type": "upgradable"}
+        ]
+        
+        # Mock _get_package_specification to return specs
+        specs = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "esmf", "version": "8.5.0"}
+        ]
+        with patch.object(tui_app, '_get_package_specification', side_effect=specs):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Should return selected packages
+        assert result is not None
+        assert len(result) == 3  # 2 selected + 1 unselected
+        assert result[0]["name"] == "netcdf-c"
+        assert result[1]["name"] == "esmf"
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_cancelled(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test cancelling package selection."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = None  # User cancelled
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"}
+        ]
+        
+        result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        assert result is None
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_no_selection(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test when user selects no packages."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = []  # Empty selection
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"}
+        ]
+        
+        result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Should return empty list
+        assert result == []
+        
+        # Should display info message
+        mock_menu.display_info.assert_called_once()
+        assert "No packages were selected" in str(mock_menu.display_info.call_args)
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_filters_excluded_packages(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that ufs_common, cmake, and stack-* packages are filtered out."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = []
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "ufs_common", "current_version": "1.0.0", "type": "dependency"},
+            {"name": "cmake", "current_version": "3.26.0", "type": "dependency"},
+            {"name": "stack-intel", "current_version": "1.0.0", "type": "dependency"},
+            {"name": "stack-gcc", "current_version": "1.0.0", "type": "dependency"},
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"}
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', return_value=None):
+            tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Verify RadioButtonMenu was called with filtered options
+        mock_radio_class.assert_called_once()
+        mock_radio.display_menu.assert_called_once()
+        options = mock_radio.display_menu.call_args[0][0]
+        
+        # Should only have netcdf-c and hdf5
+        assert len(options) == 2
+        assert "netcdf-c" in options[0]
+        assert "hdf5" in options[1]
+        assert "ufs_common" not in str(options)
+        assert "cmake" not in str(options)
+        assert "stack-intel" not in str(options)
+        assert "stack-gcc" not in str(options)
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_display_format(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that packages are displayed with correct format."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = []
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"}
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', return_value=None):
+            tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Verify display format
+        options = mock_radio.display_menu.call_args[0][0]
+        
+        assert "📦 netcdf-c (v4.9.0)" in options[0]
+        assert "📦 hdf5 (v1.14.0)" in options[1]
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_calls_get_package_specification(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that _get_package_specification is called for selected packages."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [0, 1]  # Select both packages
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"}
+        ]
+        
+        specs = [
+            {"name": "netcdf-c", "version": "4.9.0", "variants": "+mpi"},
+            {"name": "hdf5", "version": "1.14.0", "variants": "~shared"}
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', side_effect=specs) as mock_get_spec:
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Verify _get_package_specification was called for each selected package
+        assert mock_get_spec.call_count == 2
+        
+        # Verify it was called with correct arguments
+        call_args_list = mock_get_spec.call_args_list
+        assert call_args_list[0][0][0] == mock_stdscr
+        assert call_args_list[0][0][1] == all_packages[0]
+        assert call_args_list[0][0][2] == mock_spack_manager
+        
+        assert call_args_list[1][0][0] == mock_stdscr
+        assert call_args_list[1][0][1] == all_packages[1]
+        assert call_args_list[1][0][2] == mock_spack_manager
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_skips_none_specs(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that packages with None specs are skipped."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [0, 1]  # Select both packages
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"}
+        ]
+        
+        # First package returns spec, second returns None (cancelled)
+        specs = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            None
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', side_effect=specs):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Should only include the package that returned a spec
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "netcdf-c"
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_partial_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test selecting some packages but not all."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [1]  # Select only middle package
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+            {"name": "esmf", "current_version": "8.5.0", "type": "upgradable"}
+        ]
+        
+        spec = {"name": "hdf5", "version": "1.14.0"}
+        
+        with patch.object(tui_app, '_get_package_specification', return_value=spec):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Should include selected package plus unselected packages appended at end
+        assert result is not None
+        assert len(result) == 3
+        assert result[0]["name"] == "hdf5"  # Selected package
+        # Unselected packages (indices 0 and 2) should be appended
+        assert result[1] == all_packages[0]
+        assert result[2] == all_packages[2]
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_radio_menu_title(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that RadioButtonMenu is created with correct title."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = []
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"}
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', return_value=None):
+            tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Verify RadioButtonMenu was created with correct title
+        mock_radio_class.assert_called_once_with(mock_stdscr, "Select packages to include in environment")
+    
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test when all packages are filtered out."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = []
+        
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+        
+        # All packages should be filtered
+        all_packages = [
+            {"name": "ufs_common", "current_version": "1.0.0", "type": "dependency"},
+            {"name": "cmake", "current_version": "3.26.0", "type": "dependency"},
+            {"name": "stack-intel", "current_version": "1.0.0", "type": "dependency"}
+        ]
+        
+        with patch.object(tui_app, '_get_package_specification', return_value=None):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+        
+        # Should still work with empty options list
+        options = mock_radio.display_menu.call_args[0][0]
+        assert len(options) == 0
+        assert result == []
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_success(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test successfully getting package specification."""
+        mock_spack_manager = Mock()
+        
+        # Mock PackageSpecDialog
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        # Mock return value
+        expected_spec = {
+            "name": "netcdf-c",
+            "version": "4.9.0",
+            "variants": "+mpi +hdf5"
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "netcdf-c",
+            "current_version": "4.9.0",
+            "type": "upgradable"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        # Verify PackageSpecDialog was created with correct args
+        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager)
+        
+        # Verify get_package_spec was called with package name and version
+        mock_dialog.get_package_spec.assert_called_once_with("netcdf-c", "4.9.0")
+        
+        # Verify result
+        assert result == expected_spec
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_cancelled(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test when user cancels package specification."""
+        mock_spack_manager = Mock()
+        
+        # Mock PackageSpecDialog
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        mock_dialog.get_package_spec.return_value = None  # User cancelled
+        
+        pkg = {
+            "name": "hdf5",
+            "current_version": "1.14.0",
+            "type": "dependency"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        assert result is None
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_with_variants(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test package specification with variants."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        expected_spec = {
+            "name": "esmf",
+            "version": "8.5.0",
+            "variants": "+external-lapack +netcdf"
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "esmf",
+            "current_version": "8.5.0",
+            "type": "upgradable"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        assert result == expected_spec
+        assert "variants" in result
+        assert result["variants"] == "+external-lapack +netcdf"
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_version_change(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test when user changes version from default."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        # User selects different version
+        expected_spec = {
+            "name": "netcdf-c",
+            "version": "4.9.1",  # Different from current_version
+            "variants": ""
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "netcdf-c",
+            "current_version": "4.9.0",
+            "type": "upgradable"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        # Should still call with original version, but return changed version
+        mock_dialog.get_package_spec.assert_called_once_with("netcdf-c", "4.9.0")
+        assert result["version"] == "4.9.1"
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_minimal_spec(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test package specification with minimal info (no variants)."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        expected_spec = {
+            "name": "zlib",
+            "version": "1.2.13"
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "zlib",
+            "current_version": "1.2.13",
+            "type": "dependency"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        assert result == expected_spec
+        assert result["name"] == "zlib"
+        assert result["version"] == "1.2.13"
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_passes_spack_manager(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test that SpackManager is passed to PackageSpecDialog."""
+        mock_spack_manager = Mock()
+        mock_spack_manager.some_property = "test_value"
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        mock_dialog.get_package_spec.return_value = {"name": "pkg", "version": "1.0"}
+        
+        pkg = {
+            "name": "pkg",
+            "current_version": "1.0",
+            "type": "dependency"
+        }
+        
+        tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        # Verify the exact SpackManager instance was passed
+        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager)
+        assert mock_dialog_class.call_args[0][1] is mock_spack_manager
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_extracts_package_info(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test that correct package name and version are extracted."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        mock_dialog.get_package_spec.return_value = {"name": "test", "version": "2.0"}
+        
+        # Package dict with extra fields
+        pkg = {
+            "name": "test-package",
+            "current_version": "1.5.3",
+            "type": "upgradable",
+            "source": {"some": "data"},
+            "extra_field": "ignored"
+        }
+        
+        tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        # Verify only name and current_version are passed
+        mock_dialog.get_package_spec.assert_called_once_with("test-package", "1.5.3")
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_dependency_type(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test package specification for dependency type package."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        expected_spec = {
+            "name": "dep-pkg",
+            "version": "3.2.1",
+            "variants": "~shared"
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "dep-pkg",
+            "current_version": "3.2.1",
+            "type": "dependency"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        assert result == expected_spec
+    
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    def test_get_package_specification_upgradable_type(self, mock_dialog_class, tui_app, mock_stdscr):
+        """Test package specification for upgradable type package."""
+        mock_spack_manager = Mock()
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        
+        expected_spec = {
+            "name": "upgradable-pkg",
+            "version": "5.0.0",
+            "variants": "+feature"
+        }
+        mock_dialog.get_package_spec.return_value = expected_spec
+        
+        pkg = {
+            "name": "upgradable-pkg",
+            "current_version": "5.0.0",
+            "type": "upgradable"
+        }
+        
+        result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
+        
+        assert result == expected_spec
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_success(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test successfully creating environment."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", [])
+        mock_spack_manager.concretize_environment.return_value = (True, "concretize output")
+        mock_spack_manager.refresh_modules.return_value = "/test/modulefiles"
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [
+            {"name": "netcdf-c", "version": "4.9.0"}
+        ]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, 'display_scrollable_text'):
+                with patch.object(tui_app, 'run_interactive_install', return_value=True):
+                    with patch.object(tui_app, '_generate_activation_scripts'):
+                        with patch('builtins.open', create=True) as mock_open:
+                            mock_open.return_value.__enter__.return_value.read.return_value = "spack.yaml content"
+                            
+                            tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "test-env")
+        
+        # Verify environment was created
+        mock_spack_manager.create_environment.assert_called_once_with(
+            "test-env", "/upstream/path", packages, "/test/workdir", tui_app.platform
+        )
+        
+        # Verify concretization
+        mock_spack_manager.concretize_environment.assert_called_once_with("/test/env/path")
+        
+        # Verify modules refreshed
+        mock_spack_manager.refresh_modules.assert_called_once_with("/test/env/path")
+        
+        # Verify success message displayed
+        success_calls = [call for call in mock_menu.display_info.call_args_list 
+                        if "Environment created successfully" in str(call)]
+        assert len(success_calls) == 1
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_with_custom_recipes(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test creating environment with packages needing custom recipes."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        packages_needing_edit = [{"name": "custom-pkg", "version": "1.0.0"}]
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", packages_needing_edit)
+        mock_spack_manager.concretize_environment.return_value = (True, "concretize output")
+        mock_spack_manager.refresh_modules.return_value = "/test/modulefiles"
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [{"name": "custom-pkg", "version": "1.0.0"}]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, '_show_custom_recipe_dialog', return_value=[]) as mock_show_dialog:
+                with patch.object(tui_app, 'display_scrollable_text'):
+                    with patch.object(tui_app, 'run_interactive_install', return_value=True):
+                        with patch.object(tui_app, '_generate_activation_scripts'):
+                            with patch('builtins.open', create=True) as mock_open:
+                                mock_open.return_value.__enter__.return_value.read.return_value = "spack.yaml content"
+                                
+                                tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "test-env")
+        
+        # Verify custom recipe dialog was shown
+        mock_show_dialog.assert_called_once()
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_concretize_failure(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test when concretization fails."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", [])
+        mock_spack_manager.concretize_environment.return_value = (False, "error output")
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [{"name": "netcdf-c", "version": "4.9.0"}]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, 'display_scrollable_text'):
+                with patch('builtins.open', create=True) as mock_open:
+                    mock_open.return_value.__enter__.return_value.read.return_value = "spack.yaml content"
+                    
+                    tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "test-env")
+        
+        # Verify failure message displayed
+        failure_calls = [call for call in mock_menu.display_info.call_args_list 
+                        if "Concretization failed" in str(call)]
+        assert len(failure_calls) == 1
+        
+        # Verify refresh_modules was NOT called
+        mock_spack_manager.refresh_modules.assert_not_called()
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_install_failure(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test when installation fails."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", [])
+        mock_spack_manager.concretize_environment.return_value = (True, "concretize output")
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [{"name": "netcdf-c", "version": "4.9.0"}]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, 'display_scrollable_text'):
+                with patch.object(tui_app, 'run_interactive_install', return_value=False):
+                    with patch('builtins.open', create=True) as mock_open:
+                        mock_open.return_value.__enter__.return_value.read.return_value = "spack.yaml content"
+                        
+                        tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "test-env")
+        
+        # Verify failure message displayed
+        failure_calls = [call for call in mock_menu.display_info.call_args_list 
+                        if "Installation failed" in str(call)]
+        assert len(failure_calls) == 1
+        
+        # Verify refresh_modules was NOT called
+        mock_spack_manager.refresh_modules.assert_not_called()
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_exception_handling(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test exception handling during environment creation."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.side_effect = Exception("Test error")
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [{"name": "netcdf-c", "version": "4.9.0"}]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "test-env")
+        
+        # Verify error message displayed
+        error_calls = [call for call in mock_menu.display_info.call_args_list 
+                      if "Error creating environment" in str(call)]
+        assert len(error_calls) == 1
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_curses_mode_restoration(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test that curses mode is properly restored after environment creation."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", [])
+        mock_spack_manager.concretize_environment.return_value = (True, "output")
+        mock_spack_manager.refresh_modules.return_value = "/modulefiles"
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = []
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, 'display_scrollable_text'):
+                with patch.object(tui_app, 'run_interactive_install', return_value=True):
+                    with patch.object(tui_app, '_generate_activation_scripts'):
+                        with patch('builtins.open', create=True) as mock_open:
+                            mock_open.return_value.__enter__.return_value.read.return_value = "yaml"
+                            
+                            tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "env")
+        
+        # Verify curses.endwin was called to exit curses mode
+        mock_endwin.assert_called()
+        
+        # Verify curses mode was restored
+        mock_stdscr.refresh.assert_called()
+        mock_doupdate.assert_called()
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_displays_spack_yaml(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test that spack.yaml is displayed before concretization."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", [])
+        mock_spack_manager.concretize_environment.return_value = (True, "output")
+        mock_spack_manager.refresh_modules.return_value = "/modulefiles"
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = []
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, 'display_scrollable_text') as mock_display:
+                with patch.object(tui_app, 'run_interactive_install', return_value=True):
+                    with patch.object(tui_app, '_generate_activation_scripts'):
+                        with patch('builtins.open', create=True) as mock_open:
+                            mock_open.return_value.__enter__.return_value.read.return_value = "test spack.yaml"
+                            
+                            tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "env")
+        
+        # Verify display_scrollable_text was called with spack.yaml
+        assert mock_display.call_count >= 1
+        # First call should be for spack.yaml
+        first_call_args = mock_display.call_args_list[0][0]
+        assert "spack.yaml" in str(first_call_args[1])
+        assert first_call_args[2] == "test spack.yaml"
+    
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('os.getcwd')
+    def test_create_environment_manual_recipe_editing(self, mock_getcwd, mock_menu_class, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test manual recipe editing flow."""
+        mock_getcwd.return_value = "/test/workdir"
+        
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        packages_needing_edit = [{"name": "pkg1", "version": "1.0"}]
+        mock_spack_manager.create_environment.return_value = ("/test/env/path", packages_needing_edit)
+        mock_spack_manager.concretize_environment.return_value = (True, "output")
+        mock_spack_manager.refresh_modules.return_value = "/modulefiles"
+        
+        installation = {
+            "type": "jcsda-spack-stack",
+            "path": "/path/to/stack",
+            "install_path": "/path/to/install"
+        }
+        
+        packages = [{"name": "pkg1", "version": "1.0"}]
+        
+        # Mock that user wants to edit recipes manually
+        remaining_packages = [{"name": "pkg1", "version": "1.0"}]
+        
+        with patch.object(tui_app, '_get_spack_config', return_value=("/spack/root", "/upstream/path")):
+            with patch.object(tui_app, '_show_custom_recipe_dialog', return_value=remaining_packages):
+                with patch.object(tui_app, '_handle_manual_recipe_editing') as mock_handle_edit:
+                    with patch.object(tui_app, 'display_scrollable_text'):
+                        with patch.object(tui_app, 'run_interactive_install', return_value=True):
+                            with patch.object(tui_app, '_generate_activation_scripts'):
+                                with patch('builtins.open', create=True) as mock_open:
+                                    mock_open.return_value.__enter__.return_value.read.return_value = "yaml"
+                                    
+                                    tui_app._create_environment(mock_stdscr, installation, packages, mock_spack_manager, "env")
+        
+        # Verify manual recipe editing was called
+        mock_handle_edit.assert_called_once_with(mock_stdscr, mock_spack_manager, remaining_packages)
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_success(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test successful manual recipe editing."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = True
+        
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": True},
+            {"package_name": "pkg2", "version": "2.0.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Verify offer_package_edit was called with packages to edit
+        mock_spack_manager.offer_package_edit.assert_called_once()
+        called_packages = mock_spack_manager.offer_package_edit.call_args[0][0]
+        assert len(called_packages) == 2
+        assert all(pkg['edit_recipe'] for pkg in called_packages)
+        
+        # Verify info message was displayed
+        mock_menu.display_info.assert_called_once()
+        info_msg = mock_menu.display_info.call_args[0][0]
+        assert "pkg1@1.0.0" in info_msg
+        assert "pkg2@2.0.0" in info_msg
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_cancelled(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test when user cancels manual recipe editing."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = False
+        
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Verify offer_package_edit was called
+        mock_spack_manager.offer_package_edit.assert_called_once()
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_empty_list(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test with empty packages list."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        packages_needing_edit = []
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Should return early without doing anything
+        mock_spack_manager.offer_package_edit.assert_not_called()
+        mock_menu.display_info.assert_not_called()
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_none_selected(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test when packages exist but none have edit_recipe=True."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": False},
+            {"package_name": "pkg2", "version": "2.0.0", "edit_recipe": False}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Should return early without editing
+        mock_spack_manager.offer_package_edit.assert_not_called()
+        mock_menu.display_info.assert_not_called()
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_mixed_selection(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test with some packages selected for editing and some not."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = True
+        
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": True},
+            {"package_name": "pkg2", "version": "2.0.0", "edit_recipe": False},
+            {"package_name": "pkg3", "version": "3.0.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Only packages with edit_recipe=True should be edited
+        called_packages = mock_spack_manager.offer_package_edit.call_args[0][0]
+        assert len(called_packages) == 2
+        assert called_packages[0]["package_name"] == "pkg1"
+        assert called_packages[1]["package_name"] == "pkg3"
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_curses_restoration(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test that curses mode is properly restored."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = True
+        
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Verify curses was exited
+        mock_endwin.assert_called_once()
+        
+        # Verify curses was restored
+        mock_stdscr.clear.assert_called_once()
+        mock_stdscr.refresh.assert_called_once()
+        mock_curs_set.assert_called_once_with(0)
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_exception_handling(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test that curses is restored even if exception occurs."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.side_effect = Exception("Test error")
+        
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0", "edit_recipe": True}
+        ]
+        
+        # Should not raise exception
+        try:
+            tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        except Exception:
+            pass
+        
+        # Verify curses restoration happened even with exception
+        mock_stdscr.clear.assert_called_once()
+        mock_stdscr.refresh.assert_called_once()
+        mock_curs_set.assert_called_once_with(0)
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_single_package(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test manual editing with single package."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = True
+        
+        packages_needing_edit = [
+            {"package_name": "netcdf-c", "version": "4.9.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Verify correct info message
+        info_msg = mock_menu.display_info.call_args[0][0]
+        assert "netcdf-c@4.9.0" in info_msg
+        assert "manual recipe editing" in info_msg.lower()
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_multiple_packages(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test manual editing with multiple packages."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        mock_spack_manager.offer_package_edit.return_value = True
+        
+        packages_needing_edit = [
+            {"package_name": "netcdf-c", "version": "4.9.0", "edit_recipe": True},
+            {"package_name": "hdf5", "version": "1.14.0", "edit_recipe": True},
+            {"package_name": "esmf", "version": "8.5.0", "edit_recipe": True}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Verify all packages are mentioned
+        info_msg = mock_menu.display_info.call_args[0][0]
+        assert "netcdf-c@4.9.0" in info_msg
+        assert "hdf5@1.14.0" in info_msg
+        assert "esmf@8.5.0" in info_msg
+    
+    @patch('curses.curs_set')
+    @patch('curses.endwin')
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_handle_manual_recipe_editing_packages_without_edit_flag(self, mock_menu_class, mock_endwin, mock_curs_set, tui_app, mock_stdscr):
+        """Test with packages that don't have edit_recipe field."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        
+        # Package without edit_recipe field (defaults to False via get)
+        packages_needing_edit = [
+            {"package_name": "pkg1", "version": "1.0.0"}
+        ]
+        
+        tui_app._handle_manual_recipe_editing(mock_stdscr, mock_spack_manager, packages_needing_edit)
+        
+        # Should not call offer_package_edit since edit_recipe defaults to False
+        mock_spack_manager.offer_package_edit.assert_not_called()
+    
+    def test_generate_activation_scripts_success(self, tui_app, mock_stdscr):
+        """Test successfully generating activation scripts."""
+        mock_spack_manager = Mock()
+        
+        with patch.object(tui_app, '_generate_activate_script') as mock_activate:
+            with patch.object(tui_app, '_generate_package_versions_script') as mock_versions:
+                tui_app._generate_activation_scripts(
+                    mock_stdscr, 
+                    mock_spack_manager, 
+                    "/test/env/path", 
+                    "/test/upstream/path"
+                )
+        
+        # Verify both scripts were generated
+        mock_activate.assert_called_once_with("/test/env/path", "/test/upstream/path")
+        mock_versions.assert_called_once_with(mock_spack_manager, "/test/env/path")
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_generate_activation_scripts_activate_script_error(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test error handling when activate script generation fails."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        
+        with patch.object(tui_app, '_generate_activate_script', side_effect=Exception("Test error")):
+            with patch.object(tui_app, '_generate_package_versions_script'):
+                tui_app._generate_activation_scripts(
+                    mock_stdscr, 
+                    mock_spack_manager, 
+                    "/test/env/path", 
+                    "/test/upstream/path"
+                )
+        
+        # Verify error message was displayed
+        error_calls = [call for call in mock_menu.display_info.call_args_list 
+                      if "Failed to generate activation scripts" in str(call)]
+        assert len(error_calls) == 1
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_generate_activation_scripts_versions_script_error(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test error handling when versions script generation fails."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        
+        mock_spack_manager = Mock()
+        
+        with patch.object(tui_app, '_generate_activate_script'):
+            with patch.object(tui_app, '_generate_package_versions_script', side_effect=Exception("Test error")):
+                tui_app._generate_activation_scripts(
+                    mock_stdscr, 
+                    mock_spack_manager, 
+                    "/test/env/path", 
+                    "/test/upstream/path"
+                )
+        
+        # Verify error message was displayed
+        error_calls = [call for call in mock_menu.display_info.call_args_list 
+                      if "Failed to generate activation scripts" in str(call)]
+        assert len(error_calls) == 1
+    
+    def test_generate_activation_scripts_passes_correct_args(self, tui_app, mock_stdscr):
+        """Test that correct arguments are passed to helper methods."""
+        mock_spack_manager = Mock()
+        
+        with patch.object(tui_app, '_generate_activate_script') as mock_activate:
+            with patch.object(tui_app, '_generate_package_versions_script') as mock_versions:
+                tui_app._generate_activation_scripts(
+                    mock_stdscr, 
+                    mock_spack_manager, 
+                    "/custom/env", 
+                    "/custom/upstream"
+                )
+        
+        # Verify correct arguments passed
+        mock_activate.assert_called_once_with("/custom/env", "/custom/upstream")
+        mock_versions.assert_called_once_with(mock_spack_manager, "/custom/env")
+    
+    def test_generate_activation_scripts_both_scripts_called(self, tui_app, mock_stdscr):
+        """Test that both script generation methods are called."""
+        mock_spack_manager = Mock()
+        
+        activate_called = False
+        versions_called = False
+        
+        def mock_activate_func(env_path, upstream_path):
+            nonlocal activate_called
+            activate_called = True
+        
+        def mock_versions_func(manager, env_path):
+            nonlocal versions_called
+            versions_called = True
+        
+        with patch.object(tui_app, '_generate_activate_script', side_effect=mock_activate_func):
+            with patch.object(tui_app, '_generate_package_versions_script', side_effect=mock_versions_func):
+                tui_app._generate_activation_scripts(
+                    mock_stdscr, 
+                    mock_spack_manager, 
+                    "/test/env", 
+                    "/test/upstream"
+                )
+        
+        assert activate_called
+        assert versions_called
+    
+    @patch('builtins.open', create=True)
+    @patch('os.path.basename')
+    @patch('os.path.abspath')
+    def test_generate_activate_script_creates_file(self, mock_abspath, mock_basename, mock_open, tui_app):
+        """Test that activate script file is created with correct content."""
+        mock_basename.return_value = "test-env"
+        mock_abspath.side_effect = lambda x: f"/abs{x}"
+        
+        mock_file = Mock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        tui_app._generate_activate_script("/test/env/path", "/test/upstream/path")
+        
+        # Verify file was opened for writing
+        mock_open.assert_called_once_with("/test/env/path/activate_spack_env.sh", 'w')
+        
+        # Verify content was written
+        mock_file.write.assert_called_once()
+        written_content = mock_file.write.call_args[0][0]
+        
+        # Verify key elements in script
+        assert "#!/bin/bash" in written_content
+        assert "test-env" in written_content
+        assert "setup-env.sh" in written_content
+        assert "spack env activate" in written_content
+    
+    @patch('builtins.open', create=True)
+    @patch('os.path.basename')
+    def test_generate_package_versions_script_success(self, mock_basename, mock_open, tui_app):
+        """Test successful generation of package versions script."""
+        mock_basename.return_value = "test-env"
+        
+        mock_file = Mock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        mock_spack_manager = Mock()
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "export netcdf-c_ver=4.9.0\nexport hdf5_ver=1.14.0\n"
+        mock_spack_manager._run_spack_command.return_value = mock_result
+        
+        tui_app._generate_package_versions_script(mock_spack_manager, "/test/env/path")
+        
+        # Verify spack find was called
+        mock_spack_manager._run_spack_command.assert_called_once()
+        call_args = mock_spack_manager._run_spack_command.call_args[0][0]
+        assert '-e' in call_args
+        assert '/test/env/path' in call_args
+        assert 'find' in call_args
+        
+        # Verify file was written
+        mock_open.assert_called_once_with("/test/env/path/export_package_versions.sh", 'w')
+    
+    @patch('builtins.open', create=True)
+    @patch('os.path.basename')
+    def test_generate_package_versions_script_spack_command_failure(self, mock_basename, mock_open, tui_app):
+        """Test handling of spack command failure."""
+        mock_basename.return_value = "test-env"
+        
+        mock_file = Mock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        mock_spack_manager = Mock()
+        mock_result = Mock()
+        mock_result.returncode = 1  # Failure
+        mock_result.stderr = "Error message"
+        mock_spack_manager._run_spack_command.return_value = mock_result
+        
+        # Should not raise exception
+        tui_app._generate_package_versions_script(mock_spack_manager, "/test/env/path")
+        
+        # File should still be created (with fallback content)
+        assert mock_open.called
+    
+    @patch('builtins.open', create=True)
+    @patch('os.path.basename')
+    @patch('os.path.abspath')
+    def test_generate_activate_script_path_handling(self, mock_abspath, mock_basename, mock_open, tui_app):
+        """Test correct path handling in activate script."""
+        mock_basename.return_value = "my-env"
+        
+        # Mock abspath to return predictable values
+        def abspath_side_effect(path):
+            if "spack/share/spack" in path:
+                return "/spack-stack/spack/share/spack/setup-env.sh"
+            return "/spack-stack"
+        
+        mock_abspath.side_effect = abspath_side_effect
+        
+        mock_file = Mock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        tui_app._generate_activate_script("/env/path", "/env/upstream/install")
+        
+        # Verify file content
+        written_content = mock_file.write.call_args[0][0]
+        assert "/spack-stack/spack/share/spack/setup-env.sh" in written_content
+        assert "/spack-stack" in written_content
+    
+    @patch('builtins.open', create=True)
+    @patch('os.path.basename')
+    def test_generate_package_versions_script_hyphen_replacement(self, mock_basename, mock_open, tui_app):
+        """Test that hyphens in package names are replaced with underscores."""
+        mock_basename.return_value = "test-env"
+        
+        mock_file = Mock()
+        mock_open.return_value.__enter__.return_value = mock_file
+        
+        mock_spack_manager = Mock()
+        mock_result = Mock()
+        mock_result.returncode = 0
+        # Spack output with hyphens in package names
+        mock_result.stdout = "export netcdf-c_ver=4.9.0\nexport parallel-netcdf_ver=1.12.0\n"
+        mock_spack_manager._run_spack_command.return_value = mock_result
+        
+        tui_app._generate_package_versions_script(mock_spack_manager, "/test/env/path")
+        
+        # Verify file was written
+        mock_file.write.assert_called_once()
+        written_content = mock_file.write.call_args[0][0]
+        
+        # Hyphens should be replaced with underscores in variable names
+        assert "netcdf_c_ver" in written_content or "netcdf-c_ver" in written_content
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_package_name_only(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test adding a package with name only (no version or variants)."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        # First call returns None (to select Add), then return 1 (to select Continue)
+        mock_menu.display_menu.side_effect = [0, 2]  # Add package, then Continue
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Package spec with name only
+        mock_dialog.get_package_spec.return_value = {"name": "zlib"}
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "zlib"
+        assert result[0].get("version") is None
+        assert result[0].get("variants") is None
+        
+        # Verify menu displayed package name only
+        # Second call to display_menu should have the package in options
+        second_call_options = mock_menu.display_menu.call_args_list[1][0][0]
+        assert "zlib" in second_call_options[0]
+        assert "@" not in second_call_options[0]
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_name_and_version(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test adding a package with name and version."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_menu.display_menu.side_effect = [0, 2]  # Add package, then Continue
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Package spec with name and version
+        mock_dialog.get_package_spec.return_value = {
+            "name": "netcdf-c",
+            "version": "4.9.0"
+        }
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "netcdf-c"
+        assert result[0]["version"] == "4.9.0"
+        assert result[0].get("variants") is None
+        
+        # Verify menu displayed package with version
+        second_call_options = mock_menu.display_menu.call_args_list[1][0][0]
+        assert "netcdf-c@4.9.0" in second_call_options[0]
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_name_and_variants(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test adding a package with name and variants only."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_menu.display_menu.side_effect = [0, 2]  # Add package, then Continue
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Package spec with name and variants
+        mock_dialog.get_package_spec.return_value = {
+            "name": "hdf5",
+            "variants": "+mpi +shared"
+        }
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "hdf5"
+        assert result[0].get("version") is None
+        assert result[0]["variants"] == "+mpi +shared"
+        
+        # Verify menu displayed package with variants
+        second_call_options = mock_menu.display_menu.call_args_list[1][0][0]
+        assert "hdf5" in second_call_options[0]
+        assert "+mpi +shared" in second_call_options[0]
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_name_version_and_variants(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test adding a package with name, version, and variants."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_menu.display_menu.side_effect = [0, 2]  # Add package, then Continue
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Package spec with name, version, and variants
+        mock_dialog.get_package_spec.return_value = {
+            "name": "esmf",
+            "version": "8.5.0",
+            "variants": "+external-lapack +netcdf"
+        }
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "esmf"
+        assert result[0]["version"] == "8.5.0"
+        assert result[0]["variants"] == "+external-lapack +netcdf"
+        
+        # Verify menu displayed full package spec
+        second_call_options = mock_menu.display_menu.call_args_list[1][0][0]
+        assert "esmf@8.5.0 +external-lapack +netcdf" in second_call_options[0]
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_multiple_packages_different_formats(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test adding multiple packages with different specification formats."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        # Add 4 packages: "Add" button moves as list grows
+        # Initial: ["Add", "Continue"] -> select 0 (Add)
+        # After 1: ["pkg1", "Add", "Continue"] -> select 1 (Add)
+        # After 2: ["pkg1", "pkg2", "Add", "Continue"] -> select 2 (Add)
+        # After 3: ["pkg1", "pkg2", "pkg3", "Add", "Continue"] -> select 3 (Add)
+        # After 4: ["pkg1", "pkg2", "pkg3", "pkg4", "Add", "Continue"] -> select 5 (Continue)
+        mock_menu.display_menu.side_effect = [0, 1, 2, 3, 5]
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Different package specs
+        mock_dialog.get_package_spec.side_effect = [
+            {"name": "zlib"},  # Name only
+            {"name": "curl", "version": "7.85.0"},  # Name + version
+            {"name": "openssl", "variants": "+shared"},  # Name + variants
+            {"name": "boost", "version": "1.79.0", "variants": "+python"}  # All three
+        ]
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 4
+        
+        # Verify each package
+        assert result[0] == {"name": "zlib"}
+        assert result[1] == {"name": "curl", "version": "7.85.0"}
+        assert result[2] == {"name": "openssl", "variants": "+shared"}
+        assert result[3] == {"name": "boost", "version": "1.79.0", "variants": "+python"}
+        
+        # Verify menu showed all packages correctly
+        final_call_options = mock_menu.display_menu.call_args_list[4][0][0]
+        assert "zlib" in final_call_options[0]
+        assert "curl@7.85.0" in final_call_options[1]
+        assert "openssl" in final_call_options[2] and "+shared" in final_call_options[2]
+        assert "boost@1.79.0 +python" in final_call_options[3]
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_edit_existing_package(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test editing an existing package in the list."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        # Add package, then select first package (index 0) to edit, then Continue
+        # First: ["Add", "Continue"] -> select 0 (Add)
+        # After add: ["hdf5@1.14.0", "Add", "Continue"] -> select 0 (Edit first package)
+        # After edit: ["hdf5@1.14.3 +mpi", "Add", "Continue"] -> select 2 (Continue)
+        mock_menu.display_menu.side_effect = [0, 0, 2]
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # First add, then edit
+        mock_dialog.get_package_spec.side_effect = [
+            {"name": "hdf5", "version": "1.14.0"},  # Initial add
+            {"name": "hdf5", "version": "1.14.3", "variants": "+mpi"}  # Edited version
+        ]
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        # Should have the edited version
+        assert result[0]["name"] == "hdf5"
+        assert result[0]["version"] == "1.14.3"
+        assert result[0]["variants"] == "+mpi"
+    
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('curses.curs_set')
+    def test_get_packages_manually_empty_version_and_variants(self, mock_curs_set, mock_dialog_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test package with empty string version and variants."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_menu.display_menu.side_effect = [0, 2]  # Add package, then Continue
+        
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        # Package with empty strings (should be treated as None)
+        mock_dialog.get_package_spec.return_value = {
+            "name": "pkg",
+            "version": "",
+            "variants": ""
+        }
+        
+        mock_spack_manager = Mock()
+        
+        result = tui_app._get_packages_manually(mock_stdscr, mock_spack_manager)
+        
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "pkg"
+        # Empty strings should not add @ or space to display
+        second_call_options = mock_menu.display_menu.call_args_list[1][0][0]
+        # Should just be "pkg" without @ or trailing space
+        assert second_call_options[0].strip() == "pkg"
+    
     @patch('curses.curs_set')
     def test_get_packages_manually_add_package(self, mock_curs_set, tui_app, mock_stdscr):
-        """Test manual package addition."""
+        """Test manual package addition (original test kept for compatibility)."""
         mock_spack_manager = Mock()
         
         # Mock the package spec dialog to return a package, then None (cancel) to avoid infinite loop

@@ -1033,6 +1033,251 @@ class TestSpackManager:
         assert success is True
         assert output == ""
 
+    # Tests for install_environment_interactive method
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_success(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test successful interactive installation."""
+        # Mock process
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = [
+            "==> Installing packages\n",
+            "==> Package 1 installed\n",
+            "==> Package 2 installed\n",
+            ""  # End of output
+        ]
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+        
+        # Verify Popen was called correctly
+        mock_popen.assert_called_once()
+        call_args = mock_popen.call_args
+        assert call_args[0][0] == [str(spack_manager.spack_exe), '-e', '/test/env', 'install']
+        assert call_args[1]['stdout'] == subprocess.PIPE
+        assert call_args[1]['stderr'] == subprocess.STDOUT
+        assert call_args[1]['stdin'] == mock_stdin
+        assert call_args[1]['text'] is True
+        assert call_args[1]['bufsize'] == 1
+        
+        # Verify wait was called
+        mock_process.wait.assert_called_once()
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_failure(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test installation failure with non-zero return code."""
+        # Mock process with failure
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = [
+            "==> Installing packages\n",
+            "==> Error: Installation failed\n",
+            ""  # End of output
+        ]
+        mock_process.wait.return_value = 1
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is False
+        mock_process.wait.assert_called_once()
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_with_logger(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test interactive installation with logging enabled."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock process
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = [
+            "==> Installing package1\n",
+            "==> Installing package2\n",
+            ""  # End of output
+        ]
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+        
+        # Verify logging was called
+        assert spack_manager.logger.info.called
+        # Check that initial log message was made
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Starting interactive spack install" in call for call in log_calls)
+        assert any("Spack install completed with return code: 0" in call for call in log_calls)
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_output_capture(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test that output is properly captured and written to stdout."""
+        # Setup logger to verify output capture
+        spack_manager.logger = Mock()
+        
+        # Mock process with multiple output lines
+        output_lines = [
+            "Line 1: Starting\n",
+            "Line 2: Processing\n",
+            "Line 3: Complete\n",
+            ""  # End of output
+        ]
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = output_lines
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+        
+        # Verify output was written to stdout
+        assert mock_stdout.write.called
+        write_calls = [call[0][0] for call in mock_stdout.write.call_args_list]
+        assert "Line 1: Starting\n" in write_calls
+        assert "Line 2: Processing\n" in write_calls
+        assert "Line 3: Complete\n" in write_calls
+        
+        # Verify logging captured output
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("SPACK: Line 1: Starting" in call for call in log_calls)
+        assert any("SPACK: Line 2: Processing" in call for call in log_calls)
+        assert any("SPACK: Line 3: Complete" in call for call in log_calls)
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_exception(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test exception handling during interactive installation."""
+        # Make Popen raise an exception
+        mock_popen.side_effect = Exception("Process creation failed")
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is False
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_exception_with_logger(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test exception handling with logging enabled."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Make Popen raise an exception
+        mock_popen.side_effect = OSError("Permission denied")
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is False
+        
+        # Verify error was logged
+        spack_manager.logger.error.assert_called_once()
+        error_call = spack_manager.logger.error.call_args[0][0]
+        assert "Error during interactive install" in error_call
+        assert "Permission denied" in error_call
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_thread_timeout(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test that output reader thread properly handles completion."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock process
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = [
+            "Installing...\n",
+            ""  # End of output
+        ]
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+        
+        # Verify the process completed successfully
+        mock_process.wait.assert_called_once()
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_empty_output(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test installation with no output."""
+        # Mock process with no output
+        mock_process = Mock()
+        mock_process.stdout.readline.return_value = ""  # Immediate EOF
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_reader_exception(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test handling of exception in output reader thread."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock process with exception during readline
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = Exception("Read error")
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        # Should still return True (process completed successfully)
+        assert result is True
+        
+        # Verify error in reader thread was logged
+        error_calls = [call[0][0] for call in spack_manager.logger.error.call_args_list]
+        assert any("Error in output reader thread" in call for call in error_calls)
+
+    @patch('subprocess.Popen')
+    @patch('sys.stdin')
+    @patch('sys.stdout')
+    def test_install_environment_interactive_output_line_count(self, mock_stdout, mock_stdin, mock_popen, spack_manager):
+        """Test that output line count is properly logged."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock process with specific number of output lines
+        mock_process = Mock()
+        mock_process.stdout.readline.side_effect = [
+            "Line 1\n",
+            "Line 2\n",
+            "Line 3\n",
+            "Line 4\n",
+            "Line 5\n",
+            ""  # End of output
+        ]
+        mock_process.wait.return_value = 0
+        mock_popen.return_value = mock_process
+        
+        result = spack_manager.install_environment_interactive("/test/env")
+        
+        assert result is True
+        
+        # Verify line count was logged
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Total output lines captured: 5" in call for call in log_calls)
+
     # Tests for refresh_modules method
 
     @patch.object(SpackManager, '_run_spack_command')
@@ -1552,6 +1797,309 @@ class TestSpackManager:
         call_args = mock_copytree.call_args
         assert str(call_args[0][1]) == str(target_dir)  # target path
         assert call_args[1]['ignore'] is not None  # ignore patterns specified
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_spack_command_fails(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test when spack location command fails."""
+        # Mock failed spack command
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "Package not found"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        result = spack_manager._fetch_and_write_package_directory("nonexistent-pkg", target_dir)
+        
+        # Verify result
+        assert result is False
+        
+        # Verify spack command was called
+        mock_run_spack.assert_called_once_with(['location', '--package-dir', 'nonexistent-pkg'])
+        
+        # Verify no copying occurred
+        mock_copytree.assert_not_called()
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_source_not_exists(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test when source directory doesn't exist."""
+        # Mock successful spack command but directory doesn't exist
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/nonexistent/path/to/package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is False
+        
+        # Verify no copying occurred
+        mock_copytree.assert_not_called()
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_with_logger(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test successful copy with logger enabled."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True for source directory check
+        with patch('pathlib.Path.exists', return_value=True):
+            # Use a callback to create actual files when copytree is called
+            def create_test_files(*args, **kwargs):
+                target_dir.mkdir(parents=True, exist_ok=True)
+                (target_dir / "package.py").write_text("test")
+                (target_dir / "file1.txt").write_text("test")
+                (target_dir / "file2.txt").write_text("test")
+                subdir = target_dir / "subdir"
+                subdir.mkdir(exist_ok=True)
+                (subdir / "file3.txt").write_text("test")
+            
+            mock_copytree.side_effect = create_test_files
+            
+            result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is True
+        
+        # Verify logging occurred
+        assert spack_manager.logger.info.called
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Copying package directory from:" in call for call in log_calls)
+        assert any("Copying to:" in call for call in log_calls)
+        # Should report 4 files and 1 directory (subdir)
+        assert any("Successfully copied 4 files and 1 directories" in call for call in log_calls)
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_removes_existing_target(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test that existing target directory is removed before copying."""
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        # Create an existing target directory
+        target_dir = tmp_path / "target" / "test-package"
+        target_dir.mkdir(parents=True)
+        (target_dir / "old_file.py").write_text("old content")
+        
+        # Mock Path.exists() to return True for source directory
+        with patch('pathlib.Path.exists', return_value=True):
+            # Mock Path.rglob() to return some files
+            with patch('pathlib.Path.rglob') as mock_rglob:
+                mock_files = [Mock(is_file=lambda: True)]
+                mock_rglob.return_value = mock_files
+                
+                result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is True
+        
+        # Verify rmtree was called to remove existing directory
+        mock_rmtree.assert_called_once_with(target_dir)
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_ignores_pycache(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test that __pycache__ and *.pyc files are ignored during copy."""
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            with patch('pathlib.Path.rglob') as mock_rglob:
+                mock_files = [Mock(is_file=lambda: True)]
+                mock_rglob.return_value = mock_files
+                
+                result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify copytree was called with ignore patterns
+        mock_copytree.assert_called_once()
+        call_args = mock_copytree.call_args
+        ignore_func = call_args[1]['ignore']
+        
+        # Test the ignore function
+        ignored = ignore_func('/', ['__pycache__', 'test.pyc', 'package.py'])
+        assert '__pycache__' in ignored
+        assert 'test.pyc' in ignored
+        assert 'package.py' not in ignored
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_copytree_exception(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test exception handling during copytree."""
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            # Make copytree raise an exception
+            mock_copytree.side_effect = OSError("Permission denied")
+            
+            result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is False
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_exception_with_logger(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test exception handling with logging enabled."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/test-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            # Make copytree raise an exception
+            mock_copytree.side_effect = RuntimeError("Copy failed")
+            
+            result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result
+        assert result is False
+        
+        # Verify error was logged
+        spack_manager.logger.error.assert_called_once()
+        error_call = spack_manager.logger.error.call_args[0][0]
+        assert "Error copying package directory" in error_call
+        assert "test-pkg" in error_call
+        assert "Copy failed" in error_call
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_empty_directory(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test copying an empty package directory."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/empty-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "empty-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            # Mock Path.rglob() to return empty list
+            with patch('pathlib.Path.rglob') as mock_rglob:
+                mock_rglob.return_value = []  # No files or directories
+                
+                result = spack_manager._fetch_and_write_package_directory("empty-pkg", target_dir)
+        
+        # Verify result
+        assert result is True
+        
+        # Verify logging shows 0 files and directories
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Successfully copied 0 files and 0 directories" in call for call in log_calls)
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_many_files(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test copying a package directory with many files and subdirectories."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Mock successful spack command
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "/path/to/spack/packages/large-package"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "large-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            # Use a callback to create actual files when copytree is called
+            def create_many_files(*args, **kwargs):
+                target_dir.mkdir(parents=True, exist_ok=True)
+                # Create 10 files
+                for i in range(10):
+                    (target_dir / f"file{i}.txt").write_text(f"content {i}")
+                # Create 3 subdirectories
+                for i in range(3):
+                    subdir = target_dir / f"subdir{i}"
+                    subdir.mkdir(exist_ok=True)
+            
+            mock_copytree.side_effect = create_many_files
+            
+            result = spack_manager._fetch_and_write_package_directory("large-pkg", target_dir)
+        
+        # Verify result
+        assert result is True
+        
+        # Verify logging shows correct counts
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Successfully copied 10 files and 3 directories" in call for call in log_calls)
+
+    @patch('shutil.copytree')
+    @patch('shutil.rmtree')
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_fetch_and_write_package_directory_stdout_with_whitespace(self, mock_run_spack, mock_rmtree, mock_copytree, spack_manager, tmp_path):
+        """Test handling of stdout with leading/trailing whitespace."""
+        # Mock spack command with whitespace in output
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "  /path/to/spack/packages/test-package\n\n"
+        mock_run_spack.return_value = mock_result
+        
+        target_dir = tmp_path / "target" / "test-package"
+        
+        # Mock Path.exists() to return True
+        with patch('pathlib.Path.exists', return_value=True):
+            with patch('pathlib.Path.rglob') as mock_rglob:
+                mock_files = [Mock(is_file=lambda: True)]
+                mock_rglob.return_value = mock_files
+                
+                result = spack_manager._fetch_and_write_package_directory("test-pkg", target_dir)
+        
+        # Verify result - should succeed (stdout is stripped)
+        assert result is True
 
     @patch.object(SpackManager, '_run_spack_command')
     def test_fetch_and_write_package_directory_spack_command_fails(self, mock_run_spack, spack_manager, tmp_path):
@@ -2636,6 +3184,759 @@ spack:
         # Scotch should have been appended to specs
         # original specs was [], now contains scotch
         assert sp["specs"] == ["scotch@1.0.0"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_with_packages_needing_edit(self, mock_upstream, spack_manager, tmp_path):
+        """Test that custom repository is added when packages_needing_edit is provided."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Define packages needing custom recipes
+        packages_needing_edit = [
+            {
+                'package_name': 'test-pkg',
+                'version': '1.0.0',
+                'recipe_path': '/some/path/package.py'
+            }
+        ]
+
+        # Dummy platform with no cpu_target
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, packages_needing_edit, DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have custom repo added at beginning
+        assert "repos" in sp
+        assert "$env/envrepo" in sp["repos"]
+        assert sp["repos"][0] == "$env/envrepo"  # Should be first for priority
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_without_packages_needing_edit(self, mock_upstream, spack_manager, tmp_path):
+        """Test that custom repository is not added when packages_needing_edit is empty."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "regular-pkg", "version": "2.0.0", "variants": ""},
+        ]
+
+        # Empty packages_needing_edit
+        packages_needing_edit = []
+
+        # Dummy platform with no cpu_target
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, packages_needing_edit, DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should NOT have custom repo added
+        assert "repos" not in sp or "$env/envrepo" not in sp.get("repos", [])
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_with_existing_repos(self, mock_upstream, spack_manager, tmp_path):
+        """Test that custom repository is prepended to existing repos list."""
+        # Prepare upstream env dir + spack.yaml with existing repos
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  repos:
+  - /existing/repo1
+  - /existing/repo2
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "custom-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Define packages needing custom recipes
+        packages_needing_edit = [
+            {
+                'package_name': 'custom-pkg',
+                'version': '1.0.0',
+                'recipe_path': '/some/path/package.py'
+            }
+        ]
+
+        # Dummy platform with no cpu_target
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, packages_needing_edit, DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have custom repo at the beginning
+        assert "repos" in sp
+        assert sp["repos"][0] == "$env/envrepo"
+        assert "/existing/repo1" in sp["repos"]
+        assert "/existing/repo2" in sp["repos"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_with_cpu_target(self, mock_upstream, spack_manager, tmp_path):
+        """Test that cpu_target is properly set when provided in platform config."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Platform with cpu_target
+        class PlatformWithTarget:
+            config = {'cpu_target': 'x86_64_v3'}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], PlatformWithTarget()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have cpu target set for all packages
+        assert "packages" in sp
+        assert "all" in sp["packages"]
+        assert "target" in sp["packages"]["all"]
+        assert sp["packages"]["all"]["target"] == ["x86_64_v3"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_without_cpu_target(self, mock_upstream, spack_manager, tmp_path):
+        """Test that cpu_target is not set when not provided in platform config."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Platform without cpu_target (empty config or empty string)
+        class PlatformWithoutTarget:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], PlatformWithoutTarget()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should NOT have target set for all packages
+        # (Note: 'all' may exist for other reasons, but shouldn't have 'target')
+        if "packages" in sp and "all" in sp["packages"]:
+            assert "target" not in sp["packages"]["all"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_with_empty_cpu_target(self, mock_upstream, spack_manager, tmp_path):
+        """Test that cpu_target is not set when it's an empty string."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Platform with empty cpu_target
+        class PlatformWithEmptyTarget:
+            config = {'cpu_target': ''}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], PlatformWithEmptyTarget()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should NOT have target set (empty string is falsy)
+        if "packages" in sp and "all" in sp["packages"]:
+            assert "target" not in sp["packages"]["all"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_cpu_target_with_logger(self, mock_upstream, spack_manager, tmp_path):
+        """Test that cpu_target setting is logged when logger is available."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Platform with cpu_target
+        class PlatformWithTarget:
+            config = {'cpu_target': 'haswell'}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], PlatformWithTarget()
+        )
+
+        # Verify logging
+        spack_manager.logger.info.assert_called()
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Setting CPU target for all packages: haswell" in call for call in log_calls)
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_combined_repos_and_cpu_target(self, mock_upstream, spack_manager, tmp_path):
+        """Test that both custom repos and cpu_target work together correctly."""
+        # Setup logger
+        spack_manager.logger = Mock()
+        
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "custom-pkg", "version": "1.0.0", "variants": "+feature"},
+        ]
+
+        # Define packages needing custom recipes
+        packages_needing_edit = [
+            {
+                'package_name': 'custom-pkg',
+                'version': '1.0.0',
+                'recipe_path': '/some/path/package.py'
+            }
+        ]
+
+        # Platform with cpu_target
+        class PlatformWithTarget:
+            config = {'cpu_target': 'zen2'}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, packages_needing_edit, PlatformWithTarget()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have both custom repo and cpu target set
+        assert "repos" in sp
+        assert sp["repos"][0] == "$env/envrepo"
+        
+        assert "packages" in sp
+        assert "all" in sp["packages"]
+        assert "target" in sp["packages"]["all"]
+        assert sp["packages"]["all"]["target"] == ["zen2"]
+        
+        # Verify logging
+        log_calls = [call[0][0] for call in spack_manager.logger.info.call_args_list]
+        assert any("Setting CPU target for all packages: zen2" in call for call in log_calls)
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_missing_spack_section(self, mock_upstream, spack_manager, tmp_path):
+        """Test that 'spack' section is created if missing from upstream yaml."""
+        # Prepare upstream env dir + spack.yaml WITHOUT 'spack' key
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+# Empty or malformed spack.yaml
+some_other_key: value
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        
+        # Should have created 'spack' section
+        assert "spack" in cfg
+        assert "specs" in cfg["spack"]
+        assert cfg["spack"]["specs"] == ["test-pkg@1.0.0"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_definitions_else_branch(self, mock_upstream, spack_manager, tmp_path):
+        """Test else branch that deletes definitions when they don't match expected structure."""
+        # Prepare upstream env dir + spack.yaml with non-standard definitions
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  definitions:
+  - custom_def: [item1, item2]
+  - another_def: [item3]
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "pkg1", "version": "1.0.0", "variants": ""},
+            {"name": "pkg2", "version": "2.0.0", "variants": "+opt"},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Definitions should be deleted (else branch)
+        assert "definitions" not in sp
+        
+        # Specs should be set directly
+        assert "specs" in sp
+        assert "pkg1@1.0.0" in sp["specs"]
+        assert "pkg2@2.0.0+opt" in sp["specs"]  # No space before variants in actual output
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_definitions_wrong_length(self, mock_upstream, spack_manager, tmp_path):
+        """Test else branch when definitions has wrong length (not 2 items)."""
+        # Prepare upstream env dir + spack.yaml with single definition
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  definitions:
+  - packages: [existing1, existing2]
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "newpkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Definitions should be deleted
+        assert "definitions" not in sp
+        assert sp["specs"] == ["newpkg@1.0.0"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={
+        'test-pkg': {'version': '1.0.0', 'variants': '+feature -debug'}
+    })
+    def test__create_spack_yaml_variant_overrides_nested_if(self, mock_upstream, spack_manager, tmp_path):
+        """Test nested if statement after 'Add variant overrides if available' comment."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages with variants
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": "+feature"},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have package with variants
+        assert "packages" in sp
+        assert "test-pkg:" in sp["packages"]
+        assert "variants" in sp["packages"]["test-pkg:"]
+        assert sp["packages"]["test-pkg:"]["variants"] == "+feature -debug"
+        assert "version" in sp["packages"]["test-pkg:"]
+        assert sp["packages"]["test-pkg:"]["version"] == ["1.0.0"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={
+        'pkg-with-version': {'version': '2.0.0', 'variants': ''}
+    })
+    def test__create_spack_yaml_version_only_creates_package_key(self, mock_upstream, spack_manager, tmp_path):
+        """Test that package key is created when only version is available (nested if)."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "pkg-with-version", "version": "2.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have package with version
+        assert "packages" in sp
+        assert "pkg-with-version:" in sp["packages"]
+        assert "version" in sp["packages"]["pkg-with-version:"]
+        assert sp["packages"]["pkg-with-version:"]["version"] == ["2.0.0"]
+        # Should not have variants (empty string)
+        assert "variants" not in sp["packages"]["pkg-with-version:"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={
+        'pkg-with-variants': {'version': '', 'variants': '+option'}
+    })
+    def test__create_spack_yaml_variants_only_creates_package_key(self, mock_upstream, spack_manager, tmp_path):
+        """Test that package key is created when only variants are available (nested if after variants)."""
+        # Prepare upstream env dir + spack.yaml
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "pkg-with-variants", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # Should have package with variants
+        assert "packages" in sp
+        assert "pkg-with-variants:" in sp["packages"]
+        assert "variants" in sp["packages"]["pkg-with-variants:"]
+        assert sp["packages"]["pkg-with-variants:"]["variants"] == "+option"
+        # Should not have version (empty string)
+        assert "version" not in sp["packages"]["pkg-with-variants:"]
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_coloned_name_exists(self, mock_upstream, spack_manager, tmp_path):
+        """Test the 'if coloned_name in spack_section[packages]' branch."""
+        # Prepare upstream env dir + spack.yaml with cmake: already defined
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  packages:
+    cmake::
+      version: [3.20.0]
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # cmake: should exist and have buildable set to False
+        # The code checks for "cmake:" (coloned_name), and if it exists in packages,
+        # sets pkg_name to "cmake:" which is then used to set buildable
+        assert "packages" in sp
+        assert "cmake:" in sp["packages"]
+        assert sp["packages"]["cmake:"]["buildable"] is False
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_coloned_name_not_exists(self, mock_upstream, spack_manager, tmp_path):
+        """Test the elif branch when coloned_name not in packages."""
+        # Prepare upstream env dir + spack.yaml without cmake
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # All always_upstream_packages should be set as non-buildable
+        assert "packages" in sp
+        for pkg_name in ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils']:
+            assert pkg_name in sp["packages"]
+            assert sp["packages"][pkg_name]["buildable"] is False
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_existing_package_without_colon(self, mock_upstream, spack_manager, tmp_path):
+        """Test when package exists without colon (neither branch of coloned_name check)."""
+        # Prepare upstream env dir + spack.yaml with cmake (no colon)
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text(r"""
+spack:
+  specs: []
+  packages:
+    cmake:
+      version: [3.20.0]
+""")
+
+        # Create dummy target env path
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        # Define packages
+        packages = [
+            {"name": "test-pkg", "version": "1.0.0", "variants": ""},
+        ]
+
+        # Dummy platform
+        class DummyPlatform:
+            config = {}
+
+        # Call the method
+        out = spack_manager._create_spack_yaml(
+            str(upstream), packages, new_env, [], DummyPlatform()
+        )
+
+        # Load back to verify
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(out)
+        sp = cfg["spack"]
+
+        # cmake already exists (without colon), so neither condition is true
+        # pkg_name stays as 'cmake' and buildable is set on it
+        assert "packages" in sp
+        assert "cmake" in sp["packages"]
+        assert sp["packages"]["cmake"]["buildable"] is False
 
     @patch.object(SpackManager, '_add_git_commit_version_to_recipe', return_value=True)
     @patch.object(SpackManager, '_fetch_recipe_content',           return_value="DUMMY RECIPE")
