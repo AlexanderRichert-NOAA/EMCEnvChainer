@@ -1010,10 +1010,6 @@ class SpackManager:
     def _filter_package_content(self, package_name: str, content: str) -> str:
         """Filter package.py content for specific packages.
         
-        For scotch package, comments out:
-        - conflicts("%oneapi") patterns
-        - depends_on("bison.*") patterns
-        
         Args:
             package_name: Name of the package
             content: Original package.py content
@@ -1021,28 +1017,28 @@ class SpackManager:
         Returns:
             Filtered package.py content
         """
-        if package_name.lower() != "scotch":
+        if package_name not in ["scotch"]:
             return content
         
         lines = content.split('\n')
-        filtered_lines = []
         
-        for line in lines:
-            # Comment out conflicts("%oneapi") pattern
-            line = re.sub(
-                r'(\s*)conflicts\("%oneapi"\)',
-                r'\1# conflicts("%oneapi")  # Commented by emcenvchainer',
-                line
-            )
-            # Comment out depends_on("bison.*") pattern
-            line = re.sub(
-                r'(\s*)depends_on\("bison.*',
-                r'\1# depends_on("bison...")  # Commented by emcenvchainer',
-                line
-            )
-            filtered_lines.append(line)
+        content = re.sub(
+            r'conflicts\("%oneapi"\)',
+            r'# conflicts("%oneapi")  # Commented by emcenvchainer',
+            content,
+        )
+        content = re.sub(
+            r'(\s*)depends_on\("bison.*',
+            r'\1# depends_on("bison...")  # Commented by emcenvchainer',
+            content,
+        )
+        content = re.sub(
+            r'self.spec["bison"].command.path',
+            '" "',
+            content,
+        )
         
-        return '\n'.join(filtered_lines)
+        return content
 
     def _prepare_package_dir(self, package_name: str, package_dir: Path, 
                             recipe_content: str = None, 
