@@ -690,7 +690,7 @@ class SpackManager:
         spec = pkg["name"]
         
         if pkg.get("version"):
-            spec += f"@{pkg['version']}"
+            spec += f"@={pkg['version']}"
         
         if pkg.get("variants"):
             variants = pkg["variants"].strip()
