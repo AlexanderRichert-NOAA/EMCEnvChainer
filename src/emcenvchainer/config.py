@@ -122,16 +122,6 @@ class Config:
                 return default
         return value
     
-    def set(self, key: str, value):
-        """Set configuration value."""
-        keys = key.split('.')
-        config = self._config
-        for k in keys[:-1]:
-            if k not in config:
-                config[k] = {}
-            config = config[k]
-        config[keys[-1]] = value
-    
     def get_platforms(self) -> Dict:
         """Get platform configurations."""
         return self.get("platforms", {})

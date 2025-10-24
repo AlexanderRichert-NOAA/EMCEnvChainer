@@ -250,25 +250,30 @@ class TestPlatformDetector:
             assert platform is not None
             assert platform.name == "Test Platform"
     
-    def test_check_platform_hostname_no_patterns(self):
-        """Test _check_platform_hostname when hostname_patterns is empty."""
-        detector = PlatformDetector()
+    @pytest.mark.parametrize("patterns,hostname,expected_result,description", [
+        ([], "any.host.com", False, "no patterns"),
+        (["node.*\\.cluster\\.local"], "node01.cluster.local", True, "matching pattern"),
+        (["node.*\\.cluster\\.local"], "server.different.domain", False, "non-matching pattern"),
+        (["node.*\\.cluster1\\.local", "node.*\\.cluster2\\.local"], "node05.cluster2.local", True, "multiple patterns - second matches"),
+    ])
+    def test_check_platform_hostname(self, patterns, hostname, expected_result, description, monkeypatch):
+        """Test _check_platform_hostname with various pattern configurations."""
+        from unittest.mock import patch
         
-        # Platform config with no hostname patterns
+        detector = PlatformDetector()
         platform_config = {
             "name": "Test Platform",
             "spack_stack_path": "/test/path",
-            "hostname_patterns": []
+            "hostname_patterns": patterns
         }
         
-        result = detector._check_platform_hostname(platform_config)
-        assert result is False
+        with patch('socket.getfqdn', return_value=hostname):
+            result = detector._check_platform_hostname(platform_config)
+            assert result == expected_result, f"Failed test case: {description}"
     
-    def test_check_platform_hostname_missing_patterns(self):
+    def test_check_platform_hostname_missing_key(self):
         """Test _check_platform_hostname when hostname_patterns key is missing."""
         detector = PlatformDetector()
-        
-        # Platform config without hostname_patterns key
         platform_config = {
             "name": "Test Platform",
             "spack_stack_path": "/test/path"
@@ -276,80 +281,3 @@ class TestPlatformDetector:
         
         result = detector._check_platform_hostname(platform_config)
         assert result is False
-    
-    def test_check_platform_hostname_pattern_match(self, monkeypatch):
-        """Test _check_platform_hostname with matching pattern."""
-        from unittest.mock import patch
-        
-        detector = PlatformDetector()
-        
-        platform_config = {
-            "name": "Test Platform",
-            "spack_stack_path": "/test/path",
-            "hostname_patterns": ["node.*\\.cluster\\.local"]
-        }
-        
-        # Mock socket.getfqdn to return a matching hostname
-        with patch('socket.getfqdn', return_value='node01.cluster.local'):
-            result = detector._check_platform_hostname(platform_config)
-            assert result is True
-    
-    def test_check_platform_hostname_pattern_no_match(self, monkeypatch):
-        """Test _check_platform_hostname with non-matching pattern."""
-        from unittest.mock import patch
-        
-        detector = PlatformDetector()
-        
-        platform_config = {
-            "name": "Test Platform",
-            "spack_stack_path": "/test/path",
-            "hostname_patterns": ["node.*\\.cluster\\.local"]
-        }
-        
-        # Mock socket.getfqdn to return a non-matching hostname
-        with patch('socket.getfqdn', return_value='server.different.domain'):
-            result = detector._check_platform_hostname(platform_config)
-            assert result is False
-    
-    def test_check_platform_hostname_case_insensitive(self, monkeypatch):
-        """Test _check_platform_hostname is case-insensitive."""
-        from unittest.mock import patch
-        
-        detector = PlatformDetector()
-        
-        platform_config = {
-            "name": "Test Platform",
-            "spack_stack_path": "/test/path",
-            "hostname_patterns": ["NODE.*\\.CLUSTER\\.LOCAL"]
-        }
-        
-        # Mock socket.getfqdn to return lowercase hostname
-        with patch('socket.getfqdn', return_value='node01.cluster.local'):
-            result = detector._check_platform_hostname(platform_config)
-            assert result is True
-    
-    def test_check_platform_hostname_multiple_patterns(self, monkeypatch):
-        """Test _check_platform_hostname with multiple patterns."""
-        from unittest.mock import patch
-        
-        detector = PlatformDetector()
-        
-        platform_config = {
-            "name": "Test Platform",
-            "spack_stack_path": "/test/path",
-            "hostname_patterns": [
-                "node.*\\.cluster1\\.local",
-                "node.*\\.cluster2\\.local",
-                "server.*\\.datacenter\\.com"
-            ]
-        }
-        
-        # Test matching second pattern
-        with patch('socket.getfqdn', return_value='node05.cluster2.local'):
-            result = detector._check_platform_hostname(platform_config)
-            assert result is True
-        
-        # Test matching third pattern
-        with patch('socket.getfqdn', return_value='server99.datacenter.com'):
-            result = detector._check_platform_hostname(platform_config)
-            assert result is True

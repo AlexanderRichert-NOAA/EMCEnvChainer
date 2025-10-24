@@ -394,35 +394,4 @@ class ModelApplicationManager:
                 self._applications.append(app)
         
         return self._applications
-    
-    def get_application_by_name(self, name: str) -> Optional[ModelApplication]:
-        """Get application by name.
-        
-        Args:
-            name: Application name
-            
-        Returns:
-            ModelApplication if found, None otherwise
-        """
-        for app in self.applications:
-            if app.name == name:
-                return app
-        return None
-    
-    def get_applications_with_install_paths(self) -> List[Tuple[ModelApplication, str]]:
-        """Get applications that have valid install paths.
-        
-        Returns:
-            List of (application, install_path) tuples
-        """
-        results = []
-        for app in self.applications:
-            try:
-                install_path = app.extract_install_path()
-                if install_path and os.path.exists(install_path):
-                    results.append((app, install_path))
-            except Exception as e:
-                print(f"Warning: Failed to get install path for {app.name}: {e}")
-        
-        return results
 

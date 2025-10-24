@@ -34,10 +34,6 @@ class TestConfig:
         # Test get with default
         assert config.get("nonexistent.key", "default") == "default"
         
-        # Test set and get
-        config.set("test.key", "value")
-        assert config.get("test.key") == "value"
-        
         # Test nested key access
         ursa_name = config.get("platforms.ursa.name")
         assert ursa_name == "Ursa (RDHPCS)"
