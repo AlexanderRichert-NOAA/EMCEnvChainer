@@ -592,9 +592,7 @@ class SpackManager:
                     if 'packages' in spack_section['definitions'][i]:
                         spack_section['definitions'][i]['packages'] = []
                         for pkg in packages:
-                            if pkg['name'] == 'scotch':
-                                spack_section['specs'].append(self._build_spec_string(pkg))
-                            elif pkg['name'] not in ['cmake']:
+                            if pkg['name'] not in ['cmake']:
                                 spack_section['definitions'][i]['packages'].append(self._build_spec_string(pkg))
             else:
                 del(spack_section['definitions'])
@@ -1009,6 +1007,47 @@ class SpackManager:
                 self.logger.error(f"Error copying package directory for {package_name}: {e}")
             return False
 
+    def _filter_package_content(self, package_name: str, content: str) -> str:
+        """Filter package.py content for specific packages.
+        
+        For scotch package, comments out:
+        - conflicts("%oneapi") patterns
+        - depends_on("bison.*") patterns
+        
+        Args:
+            package_name: Name of the package
+            content: Original package.py content
+            
+        Returns:
+            Filtered package.py content
+        """
+        if package_name.lower() == "scotch":
+            lines = content.split('\n')
+            filtered_lines = []
+            
+            for line in lines:
+                stripped = line.strip()
+                # Comment out conflicts("%oneapi") pattern
+                if 'conflicts("%oneapi")' in line:
+                    filtered_lines.append(re.sub(
+                        r'(\s*)conflicts\("%oneapi"\)',
+                        r'\1# conflicts("%oneapi")  # Commented by emcenvchainer',
+                        line
+                    ))
+                # Comment out depends_on("bison.*") pattern
+                elif re.search(r'depends_on\("bison', line, re.IGNORECASE):
+                    filtered_lines.append(re.sub(
+                        r'(\s*)depends_on\("bison[^"]*"\)',
+                        r'\1# depends_on("bison...")  # Commented by emcenvchainer',
+                        line
+                    ))
+                else:
+                    filtered_lines.append(line)
+            
+            return '\n'.join(filtered_lines)
+        
+        return content
+
     def _prepare_package_dir(self, package_name: str, package_dir: Path, 
                             recipe_content: str = None, 
                             prefer_local: bool = True,
@@ -1040,8 +1079,10 @@ class SpackManager:
         
         # If recipe content was provided, use it
         if recipe_content:
+            # Apply filtering for specific packages
+            filtered_content = self._filter_package_content(package_name, recipe_content)
             with open(package_py_path, 'w') as f:
-                f.write(recipe_content)
+                f.write(filtered_content)
             if self.logger:
                 self.logger.info(f"Written provided recipe content for {package_name}")
             
@@ -1055,6 +1096,14 @@ class SpackManager:
         if prefer_local:
             success = self._fetch_and_write_package_directory(package_name, package_dir)
             if success:
+                # Apply filtering for specific packages after copying
+                if package_py_path.exists():
+                    with open(package_py_path, 'r') as f:
+                        content = f.read()
+                    filtered_content = self._filter_package_content(package_name, content)
+                    with open(package_py_path, 'w') as f:
+                        f.write(filtered_content)
+                
                 if self.logger:
                     self.logger.info(f"Copied {package_name} from local Spack installation")
                 return package_py_path, 'local'
@@ -1063,8 +1112,10 @@ class SpackManager:
         if fetch_remote:
             recipe_content = self._fetch_recipe_content(package_name)
             if recipe_content:
+                # Apply filtering for specific packages
+                filtered_content = self._filter_package_content(package_name, recipe_content)
                 with open(package_py_path, 'w') as f:
-                    f.write(recipe_content)
+                    f.write(filtered_content)
                 if self.logger:
                     self.logger.info(f"Written remote recipe content for {package_name}")
                 

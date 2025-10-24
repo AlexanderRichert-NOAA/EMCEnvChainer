@@ -2439,8 +2439,7 @@ def func(): pass
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_definitions_branch(self, mock_upstream, spack_manager, tmp_path):
-        """When 'definitions' exist, packages go into definitions->packages except scotch/cmakes,
-           and scotch goes into specs."""
+        """When 'definitions' exist, packages go into definitions->packages."""
         # Prepare upstream env dir + spack.yaml
         upstream = tmp_path / "upstream"
         upstream.mkdir()
@@ -2457,9 +2456,8 @@ spack:
         new_env = tmp_path / "env"
         new_env.mkdir()
 
-        # Define packages: one scotch, one foo, one cmake
+        # Define package foo
         packages = [
-            {"name": "scotch", "version": "1.0.0", "variants": ""},
             {"name": "foo",    "version": "2.0.0", "variants": "opt"},
         ]
 
@@ -2483,10 +2481,6 @@ spack:
         pkgs_def = next(d for d in defs if "packages" in d)["packages"]
         # Should only contain foo, not scotch or existing*
         assert pkgs_def == ["foo@=2.0.0 opt"]
-
-        # Scotch should have been appended to specs
-        # original specs was [], now contains scotch
-        assert sp["specs"] == ["scotch@=1.0.0"]
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_with_packages_needing_edit(self, mock_upstream, spack_manager, tmp_path):
@@ -3240,3 +3234,46 @@ spack:
         assert "packages" in sp
         assert "cmake" in sp["packages"]
         assert sp["packages"]["cmake"]["buildable"] is False
+
+    @pytest.mark.parametrize("package_name,should_filter", [
+        ("scotch", True),
+        ("hdf5", False),
+    ])
+    def test_filter_package_content(self, spack_manager, package_name, should_filter):
+        """Test filtering of package content.
+        
+        For scotch: comments out conflicts("%oneapi") and depends_on("bison.*")
+        For other packages: leaves content unchanged
+        """
+        content = '''# Package
+class Package(Package):
+    version("1.0", sha256="abc123")
+    conflicts("%oneapi")
+    conflicts("%intel")
+    depends_on("bison@3.4:")
+    depends_on("mpi")
+    depends_on("flex@2.6:")
+    
+    def install(self):
+        # Indented lines
+        conflicts("%oneapi")
+        depends_on("bison@3.8:")
+'''
+        
+        filtered = spack_manager._filter_package_content(package_name, content)
+        
+        if should_filter:
+            # For scotch: verify patterns are commented
+            lines = filtered.split('\n')
+            for line in lines:
+                # All conflicts("%oneapi") should be commented
+                if 'conflicts("%oneapi")' in line:
+                    assert line.strip().startswith('#'), f"Line should be commented: {line}"
+                # All bison dependencies should be commented
+                if 'bison' in line.lower() and 'depends_on' in line.lower():
+                    assert line.strip().startswith('#'), f"Line should be commented: {line}"
+
+        else:
+            # For non-scotch packages: content unchanged
+            assert filtered == content
+
