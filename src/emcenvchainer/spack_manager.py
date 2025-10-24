@@ -894,6 +894,29 @@ class SpackManager:
 
         return version in available_versions
 
+    def _get_remote_repo_info(self, base_url: str = None) -> tuple[str, str, str]:
+        """Extract Git organization, repository name, and branch from config.
+        
+        Args:
+            base_url: Optional base URL to override config value
+            
+        Returns:
+            Tuple of (git_org, git_repo, git_branch)
+        """
+        if not base_url:
+            base_url = self.config.get("spack_repository", {}).get("base_url", 
+                                      "https://github.com/JCSDA/spack.git")
+        
+        # Get repository info from config
+        repo_config = self.config.get("spack_repository", {})
+        
+        # Extract org/repo from base_url like "https://github.com/JCSDA/spack.git"
+        base_url_parts = base_url.replace("https://github.com/", "").replace(".git", "").split("/")
+        git_org = base_url_parts[0]
+        git_repo = base_url_parts[1]
+        git_branch = repo_config.get("branch", "develop")
+        
+        return git_org, git_repo, git_branch
 
     def _fetch_recipe_content(self, package_name: str) -> str:
         """Fetch the recipe content for a package from the remote repository.
@@ -905,17 +928,8 @@ class SpackManager:
             Recipe content as string, or None if not found
         """
         try:
-            base_url = self.config.get("spack_repository", {}).get("base_url", 
-                                      "https://github.com/JCSDA/spack.git")
-            
-            # Get repository info from config
-            repo_config = self.config.get("spack_repository", {})
-            
-            # Extract org/repo from base_url like "https://github.com/JCSDA/spack.git"
-            base_url_parts = base_url.replace("https://github.com/", "").replace(".git", "").split("/")
-            git_org = base_url_parts[0]
-            git_repo = base_url_parts[1]
-            git_branch = repo_config.get("branch", "develop")
+            # Get repository info using consolidated helper
+            git_org, git_repo, git_branch = self._get_remote_repo_info()
             
             # Construct the raw GitHub URL directly
             package_url = f"https://raw.githubusercontent.com/{git_org}/{git_repo}/refs/heads/{git_branch}/var/spack/repos/builtin/packages/{package_name}/package.py"
@@ -1074,19 +1088,9 @@ class SpackManager:
         Returns:
             True if version might be available, False otherwise
         """
-        if not base_url:
-            base_url = self.config.get("spack_repository", {}).get("base_url", 
-                                      "https://github.com/JCSDA/spack.git")
-        
         try:
-            # Get repository info from config
-            repo_config = self.config.get("spack_repository", {})
-            
-            # Extract org/repo from base_url like "https://github.com/JCSDA/spack.git"
-            base_url_parts = base_url.replace("https://github.com/", "").replace(".git", "").split("/")
-            git_org = base_url_parts[0]
-            git_repo = base_url_parts[1]
-            git_branch = repo_config.get("branch", "develop")
+            # Get repository info using consolidated helper
+            git_org, git_repo, git_branch = self._get_remote_repo_info(base_url)
             
             # Construct the raw GitHub URL directly
             package_url = f"https://raw.githubusercontent.com/{git_org}/{git_repo}/refs/heads/{git_branch}/var/spack/repos/builtin/packages/{package_name}/package.py"
@@ -1506,12 +1510,9 @@ class SpackManager:
     def _fetch_and_write_all_remote_files(self, package_name: str, package_dir: Path):
         """Fetch and write all supporting files for a package from the remote repository."""
         try:
-            base_url = self.config.get("spack_repository", {}).get("base_url", "https://github.com/JCSDA/spack.git")
-            repo_config = self.config.get("spack_repository", {})
-            base_url_parts = base_url.replace("https://github.com/", "").replace(".git", "").split("/")
-            git_org = base_url_parts[0]
-            git_repo = base_url_parts[1]
-            git_branch = repo_config.get("branch", "develop")
+            # Get repository info using consolidated helper
+            git_org, git_repo, git_branch = self._get_remote_repo_info()
+            
             import requests
             api_url = f"https://api.github.com/repos/{git_org}/{git_repo}/contents/var/spack/repos/builtin/packages/{package_name}"
             api_params = {"ref": git_branch}
