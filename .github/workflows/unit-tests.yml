@@ -26,12 +26,12 @@ jobs:
     
     - name: Run unit tests with pytest
       run: |
-        python -m pytest tests/ -v --tb=short -W error --cov=emcenvchainer --cov-report=term-missing --cov-report=html
+        python -m pytest tests/ -v -W error --cov=emcenvchainer --cov-report=term-missing --cov-report=html
     
     - name: Upload coverage report as artifact
       if: matrix.python-version == '3.13'
       uses: actions/upload-artifact@v4
       with:
-        name: emcenvchainer-pytest-cov-report
+        name: emcenvchainer-pytest-cov-report-${{ github.sha }}
         path: htmlcov/
         retention-days: 90
