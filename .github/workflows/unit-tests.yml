@@ -26,7 +26,7 @@ jobs:
     
     - name: Run unit tests with pytest
       run: |
-        python -m pytest tests/ -v -W error --cov=emcenvchainer --cov-report=term-missing --cov-report=html
+        python -m pytest -W error --cov=src/emcenvchainer --cov-report=term-missing --cov-report=html tests/
     
     - name: Upload coverage report as artifact
       if: matrix.python-version == '3.13'
