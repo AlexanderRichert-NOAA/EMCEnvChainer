@@ -3950,32 +3950,3 @@ spack:
         assert "packages" in sp
         assert "cmake" in sp["packages"]
         assert sp["packages"]["cmake"]["buildable"] is False
-
-    @patch.object(SpackManager, '_add_git_commit_version_to_recipe', return_value=True)
-    @patch.object(SpackManager, '_fetch_recipe_content',           return_value="DUMMY RECIPE")
-    @patch.object(SpackManager, '_fetch_and_write_package_directory', return_value=False)
-    def test_process_pending_git_commits_falls_back_to_remote(self,
-          mock_fetch_local, mock_fetch_remote, mock_add_git, spack_manager, tmp_path):
-        """If local fetch fails, we fall back to remote and still nominate for editing."""
-        pkg, ver, commit = "my-package", "0.1.0", "abcdef1234567890"
-        spack_manager.add_pending_git_commit(pkg, ver, commit)
-
-        result = spack_manager._process_pending_git_commits(str(tmp_path))
-
-        mock_fetch_remote.assert_called_once_with(pkg)
-        mock_add_git.assert_called_once()  # now also patched
-
-        assert len(result) == 1
-        entry = result[0]
-        expected = tmp_path / "envrepo" / "packages" / pkg / "package.py"
-
-        assert entry['package_name'] == pkg
-        assert entry['version']      == ver
-        assert entry['commit_hash']  == commit
-        assert entry['operation']    == 'git_commit'
-        assert entry['use_local_copy']  is True
-        assert entry['found_in_local']  is True    # code always sets this to True
-        assert entry['found_in_remote'] is False
-        assert entry['recipe_path']      == str(expected)
-
-        assert spack_manager.pending_git_commits == []

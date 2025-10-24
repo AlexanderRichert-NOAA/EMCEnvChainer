@@ -905,6 +905,7 @@ class SpackManager:
 
         return version in available_versions
 
+
     def _fetch_recipe_content(self, package_name: str) -> str:
         """Fetch the recipe content for a package from the remote repository.
         
@@ -938,7 +939,10 @@ class SpackManager:
             if response.status_code == 200:
                 if self.logger:
                     self.logger.info(f"Successfully fetched recipe for {package_name}")
-                return response.text
+                content = response.text
+                content = content.replace(": EnvironmentModifications", "")
+                
+                return content
             else:
                 if self.logger:
                     self.logger.warning(f"Failed to fetch recipe: HTTP {response.status_code}")
@@ -1340,17 +1344,9 @@ class SpackManager:
                 # First, copy the recipe from local installation
                 success = self._fetch_and_write_package_directory(package_name, package_dir)
                 if not success:
-                    # If that fails, try to get it from remote
-                    recipe_content = self._fetch_recipe_content(package_name)
-                    if recipe_content:
-                        # Remove newer type hinting that breaks with spack-stack 1.9 and before
-                        recipe_content = recipe_content.replace(": EnvironmentModifications", "")
-                        with open(package_py_path, 'w') as f:
-                            f.write(recipe_content)
-                        self._log_and_print(f"  ✓ Fetched recipe from remote repository for {package_name}")
-                    else:
-                        self._log_and_print(f"  ✗ Could not obtain recipe for {package_name}", "error")
-                        continue
+                    # If that fails, throw an error
+                    self._log_and_print(f"  ✗ Could not obtain recipe for {package_name} from local installation", "error")
+                    raise RuntimeError(f"Failed to fetch local recipe for {package_name}. Git commit versions require a local package copy.")
                 
                 # Add the Git commit version to the recipe
                 success = self._add_git_commit_version_to_recipe(package_py_path, version, commit_hash)
