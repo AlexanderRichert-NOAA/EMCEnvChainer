@@ -227,33 +227,23 @@ class SpackManager:
                 self._log_and_print(f"Processing recipe for {package_name}@{version} (manual_edit={needs_manual_edit}, local={found_in_local}, remote={found_in_remote})")
 
                 try:
-                    # Always create the package directory
                     package_dir = packages_dir / package_name
-                    package_dir.mkdir(parents=True, exist_ok=True)
-
-                    # If the version exists in the remote repo, always fetch remote recipe and supporting files
+                    
+                    # Determine strategy based on where version was found
                     if found_in_remote or recipe_content:
-                        # Fetch recipe content if not already provided
-                        if not recipe_content:
-                            recipe_content = self._fetch_recipe_content(package_name)
-                            if not recipe_content:
-                                self._log_and_print(f"✗ Could not fetch remote recipe for {package_name}", "error")
-                                continue
-
-                        # Write package.py from remote
-                        package_py_path = package_dir / "package.py"
-                        with open(package_py_path, 'w') as f:
-                            f.write(recipe_content)
-                        if self.logger:
-                            self.logger.info(f"Written remote recipe content for {package_name}")
-
-                        # Fetch all patch/supporting files from remote
-                        self._fetch_and_write_all_remote_files(package_name, package_dir)
-
+                        # Prefer remote content when version exists in remote repo
+                        package_py_path, source = self._prepare_package_dir(
+                            package_name, 
+                            package_dir,
+                            recipe_content=recipe_content,
+                            prefer_local=False,
+                            fetch_remote=True
+                        )
+                        
                         # Track that we wrote a remote recipe into envrepo for this package
-                        if package_name not in self.remote_recipes_added:
+                        if source == 'remote' and package_name not in self.remote_recipes_added:
                             self.remote_recipes_added.append(package_name)
-
+                        
                         # If manual edit requested, add to edit list
                         if needs_manual_edit:
                             packages_needing_edit.append({
@@ -270,33 +260,39 @@ class SpackManager:
                             if self.logger:
                                 self.logger.info(f"Added {package_name} recipe to environment repository")
                                 self.logger.info(f"Package directory: {package_dir}")
-
-                    # If manual edit requested and use_local_copy, copy from local installation
+                    
                     elif needs_manual_edit and use_local_copy:
-                        success = self._fetch_and_write_package_directory(package_name, package_dir)
-                        if success:
-                            packages_needing_edit.append({
-                                'package_name': package_name,
-                                'version': version,
-                                'recipe_path': str(package_dir / "package.py"),
-                                'use_local_copy': use_local_copy,
-                                'found_in_local': True,
-                                'found_in_remote': False
-                            })
-                            if self.logger:
-                                self.logger.info(f"Copied {package_name} from local installation for manual editing")
-                        else:
-                            self._log_and_print(f"✗ Could not copy {package_name} from local installation", "warning")
-
-                    # Otherwise, try to copy from local installation
+                        # Manual edit requested with local copy preference
+                        package_py_path, source = self._prepare_package_dir(
+                            package_name,
+                            package_dir,
+                            prefer_local=True,
+                            fetch_remote=False
+                        )
+                        
+                        packages_needing_edit.append({
+                            'package_name': package_name,
+                            'version': version,
+                            'recipe_path': str(package_py_path),
+                            'use_local_copy': use_local_copy,
+                            'found_in_local': True,
+                            'found_in_remote': False
+                        })
+                        if self.logger:
+                            self.logger.info(f"Copied {package_name} from local installation for manual editing")
+                    
                     else:
-                        success = self._fetch_and_write_package_directory(package_name, package_dir)
-                        if success:
-                            if self.logger:
-                                self.logger.info(f"Copied {package_name} from local Spack installation")
-                                self.logger.info(f"Package directory: {package_dir}")
-                        else:
-                            self._log_and_print(f"✗ No recipe content available for {package_name}@{version}", "warning")
+                        # Default: try local first, then remote
+                        package_py_path, source = self._prepare_package_dir(
+                            package_name,
+                            package_dir,
+                            prefer_local=True,
+                            fetch_remote=True
+                        )
+                        
+                        if self.logger:
+                            self.logger.info(f"Added {package_name} from {source} source")
+                            self.logger.info(f"Package directory: {package_dir}")
 
                 except Exception as e:
                     self._log_and_print(f"✗ Error adding {package_name}@{version}: {e}", "error")
@@ -336,25 +332,18 @@ class SpackManager:
             try:
                 self._log_and_print(f"Setting up custom recipe for {package_name}@{version}...")
                 
-                # Create package directory if it doesn't exist
                 package_dir = packages_dir / package_name
-                package_dir.mkdir(parents=True, exist_ok=True)
                 
-                package_py_path = package_dir / "package.py"
+                # Prepare the package directory with recipe (prefer local, fallback to remote)
+                package_py_path, source = self._prepare_package_dir(
+                    package_name,
+                    package_dir,
+                    prefer_local=True,
+                    fetch_remote=True
+                )
                 
-                # First, copy the recipe from local installation
-                success = self._fetch_and_write_package_directory(package_name, package_dir)
-                if not success:
-                    # If that fails, try to get it from remote
-                    recipe_content = self._fetch_recipe_content(package_name)
-                    if recipe_content:
-                        with open(package_py_path, 'w') as f:
-                            f.write(recipe_content)
-                        if self.logger:
-                            self.logger.info(f"Fetched recipe from remote repository")
-                    else:
-                        self._log_and_print(f"✗ Could not obtain recipe for {package_name}", "error")
-                        continue
+                if self.logger:
+                    self.logger.info(f"Obtained recipe from {source} source")
                 
                 # Now that we have the recipe, run spack checksum to add the version
                 self._log_and_print(f"Running spack checksum for {package_name}@{version}...")
@@ -1006,6 +995,73 @@ class SpackManager:
                 self.logger.error(f"Error copying package directory for {package_name}: {e}")
             return False
 
+    def _prepare_package_dir(self, package_name: str, package_dir: Path, 
+                            recipe_content: str = None, 
+                            prefer_local: bool = True,
+                            fetch_remote: bool = True) -> tuple[Path, str]:
+        """Centralized method to prepare a package directory with recipe files.
+        
+        This method handles the common pattern of:
+        1. Creating the package directory
+        2. Obtaining recipe content (from local or remote)
+        3. Writing package.py file
+        4. Fetching supporting files from remote repository
+        
+        Args:
+            package_name: Name of the package
+            package_dir: Directory to prepare
+            recipe_content: Optional pre-fetched recipe content
+            prefer_local: Whether to prefer copying from local installation first
+            fetch_remote: Whether to fetch from remote if local copy fails
+            
+        Returns:
+            Tuple of (package_py_path, source) where source is 'local', 'remote', or 'provided'
+            
+        Raises:
+            RuntimeError: If unable to obtain recipe content from any source
+        """
+        # Always create the package directory
+        package_dir.mkdir(parents=True, exist_ok=True)
+        package_py_path = package_dir / "package.py"
+        
+        # If recipe content was provided, use it
+        if recipe_content:
+            with open(package_py_path, 'w') as f:
+                f.write(recipe_content)
+            if self.logger:
+                self.logger.info(f"Written provided recipe content for {package_name}")
+            
+            # Still fetch supporting files from remote
+            if fetch_remote:
+                self._fetch_and_write_all_remote_files(package_name, package_dir)
+            
+            return package_py_path, 'provided'
+        
+        # Try local copy first if preferred
+        if prefer_local:
+            success = self._fetch_and_write_package_directory(package_name, package_dir)
+            if success:
+                if self.logger:
+                    self.logger.info(f"Copied {package_name} from local Spack installation")
+                return package_py_path, 'local'
+        
+        # Try remote fetch if enabled
+        if fetch_remote:
+            recipe_content = self._fetch_recipe_content(package_name)
+            if recipe_content:
+                with open(package_py_path, 'w') as f:
+                    f.write(recipe_content)
+                if self.logger:
+                    self.logger.info(f"Written remote recipe content for {package_name}")
+                
+                # Fetch all supporting files from remote
+                self._fetch_and_write_all_remote_files(package_name, package_dir)
+                
+                return package_py_path, 'remote'
+        
+        # If we get here, all methods failed
+        raise RuntimeError(f"Could not obtain recipe for {package_name} from any source")
+
 
     def check_version_in_remote_repo(self, package_name: str, version: str, base_url: str = None) -> bool:
         """Check if a package version exists in the remote Spack repository.
@@ -1335,18 +1391,24 @@ class SpackManager:
             try:
                 self._log_and_print(f"Adding Git commit version for {package_name}@{version} (commit: {commit_hash[:8]}...)")
                 
-                # Create package directory if it doesn't exist
                 package_dir = packages_dir / package_name
-                package_dir.mkdir(parents=True, exist_ok=True)
                 
-                package_py_path = package_dir / "package.py"
-                
-                # First, copy the recipe from local installation
-                success = self._fetch_and_write_package_directory(package_name, package_dir)
-                if not success:
-                    # If that fails, throw an error
+                # Git commit versions require local package copy (no remote fallback)
+                try:
+                    package_py_path, source = self._prepare_package_dir(
+                        package_name,
+                        package_dir,
+                        prefer_local=True,
+                        fetch_remote=False
+                    )
+                    
+                    if source != 'local':
+                        raise RuntimeError(f"Git commit versions require a local package copy, but got source: {source}")
+                    
+                except RuntimeError as e:
                     self._log_and_print(f"  ✗ Could not obtain recipe for {package_name} from local installation", "error")
-                    raise RuntimeError(f"Failed to fetch local recipe for {package_name}. Git commit versions require a local package copy.")
+                    self._log_and_print(f"  ✗ {e}", "error")
+                    continue
                 
                 # Add the Git commit version to the recipe
                 success = self._add_git_commit_version_to_recipe(package_py_path, version, commit_hash)
