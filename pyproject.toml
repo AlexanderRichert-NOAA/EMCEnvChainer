@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
     "Topic :: System :: Installation/Setup",
 ]
-keywords = ["spack", "environment", "chaining", "hpc", "scientific-computing"]
+keywords = ["spack", "hpc", "scientific-computing"]
 requires-python = ">=3.8"
 dependencies = [
     "requests>=2.25.0",
