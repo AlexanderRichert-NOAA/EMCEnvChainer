@@ -469,11 +469,11 @@ class TestSpackManager:
         with patch.object(spack_manager, '_log_and_print') as mock_log:
             result = spack_manager._process_pending_recipes("/test/env")
         
-        # Should return empty list due to fetch failure
+        # Should return empty list due to fetch failure (exception caught)
         assert len(result) == 0
         
-        # Should have logged error
-        mock_log.assert_any_call("✗ Could not fetch remote recipe for test-pkg", "error")
+        # Should have logged error for the exception
+        mock_log.assert_any_call("✗ Error adding test-pkg@1.0.0: Could not obtain recipe for test-pkg from any source", "error")
 
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
@@ -482,7 +482,7 @@ class TestSpackManager:
         """Test _process_pending_recipes when local copy fails."""
         mock_fetch_local.return_value = False  # Simulate copy failure
         
-        # Add a pending recipe that needs manual edit and local copy
+        # Add a pending recipe that needs manual edit and local copy (no remote allowed)
         spack_manager.add_pending_recipe(
             "test-pkg", "1.0.0",
             needs_manual_edit=True,
@@ -492,11 +492,11 @@ class TestSpackManager:
         with patch.object(spack_manager, '_log_and_print') as mock_log:
             result = spack_manager._process_pending_recipes("/test/env")
         
-        # Should return empty list due to copy failure
+        # Should return empty list due to copy failure (exception caught)
         assert len(result) == 0
         
-        # Should have logged warning
-        mock_log.assert_any_call("✗ Could not copy test-pkg from local installation", "warning")
+        # Should have logged error for the exception
+        mock_log.assert_any_call("✗ Error adding test-pkg@1.0.0: Could not obtain recipe for test-pkg from any source", "error")
 
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
@@ -652,13 +652,16 @@ class TestSpackManager:
         with patch.object(spack_manager, '_log_and_print') as mock_log:
             result = spack_manager._process_pending_checksums("/test/env")
         
-        # Should return empty list since recipe couldn't be obtained
-        assert len(result) == 0
+        # Should return one item in list with error info (exception caught and handled)
+        assert len(result) == 1
+        assert result[0]['package_name'] == 'test-pkg'
+        assert result[0]['operation'] == 'checksum_error'
+        assert 'Could not obtain recipe for test-pkg from any source' in result[0]['error']
         
         # Should have logged error
-        mock_log.assert_any_call("✗ Could not obtain recipe for test-pkg", "error")
+        mock_log.assert_any_call("✗ Error adding checksum for test-pkg@1.0.0: Could not obtain recipe for test-pkg from any source", "error")
         
-        # Should not have run subprocess
+        # Should not have run subprocess (because exception raised before that point)
         mock_subprocess.assert_not_called()
 
     @patch('pathlib.Path.mkdir')
