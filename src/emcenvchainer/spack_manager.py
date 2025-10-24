@@ -1021,32 +1021,28 @@ class SpackManager:
         Returns:
             Filtered package.py content
         """
-        if package_name.lower() == "scotch":
-            lines = content.split('\n')
-            filtered_lines = []
-            
-            for line in lines:
-                stripped = line.strip()
-                # Comment out conflicts("%oneapi") pattern
-                if 'conflicts("%oneapi")' in line:
-                    filtered_lines.append(re.sub(
-                        r'(\s*)conflicts\("%oneapi"\)',
-                        r'\1# conflicts("%oneapi")  # Commented by emcenvchainer',
-                        line
-                    ))
-                # Comment out depends_on("bison.*") pattern
-                elif re.search(r'depends_on\("bison', line, re.IGNORECASE):
-                    filtered_lines.append(re.sub(
-                        r'(\s*)depends_on\("bison[^"]*"\)',
-                        r'\1# depends_on("bison...")  # Commented by emcenvchainer',
-                        line
-                    ))
-                else:
-                    filtered_lines.append(line)
-            
-            return '\n'.join(filtered_lines)
+        if package_name.lower() != "scotch":
+            return content
         
-        return content
+        lines = content.split('\n')
+        filtered_lines = []
+        
+        for line in lines:
+            # Comment out conflicts("%oneapi") pattern
+            line = re.sub(
+                r'(\s*)conflicts\("%oneapi"\)',
+                r'\1# conflicts("%oneapi")  # Commented by emcenvchainer',
+                line
+            )
+            # Comment out depends_on("bison.*") pattern
+            line = re.sub(
+                r'(\s*)depends_on\("bison.*',
+                r'\1# depends_on("bison...")  # Commented by emcenvchainer',
+                line
+            )
+            filtered_lines.append(line)
+        
+        return '\n'.join(filtered_lines)
 
     def _prepare_package_dir(self, package_name: str, package_dir: Path, 
                             recipe_content: str = None, 
