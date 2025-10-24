@@ -103,7 +103,7 @@ class TestSpackManager:
         """Test _build_spec_string with package name and version."""
         pkg = {"name": "cmake", "version": "3.20.0"}
         result = spack_manager._build_spec_string(pkg)
-        assert result == "cmake@3.20.0"
+        assert result == "cmake@=3.20.0"
     
     def test_build_spec_string_with_variants(self, spack_manager):
         """Test _build_spec_string with package name and variants."""
@@ -121,7 +121,7 @@ class TestSpackManager:
         """Test _build_spec_string with all components."""
         pkg = {"name": "cmake", "version": "3.20.0", "variants": "+shared +ssl"}
         result = spack_manager._build_spec_string(pkg)
-        assert result == "cmake@3.20.0+shared +ssl"
+        assert result == "cmake@=3.20.0+shared +ssl"
     
     def test_add_pending_recipe_new_package(self, spack_manager):
         """Test adding a pending recipe for a new package."""
@@ -831,7 +831,7 @@ class TestSpackManager:
         # The output should have the correct specs and upstream
         assert "spack" in result_yaml
         spack_section = result_yaml["spack"]
-        assert set(spack_section["specs"]) == {"hdf5@1.10.7", "netcdf-c@4.7.4"}
+        assert set(spack_section["specs"]) == {"hdf5@=1.10.7", "netcdf-c@=4.7.4"}
         assert "upstreams" in spack_section
         # The upstream should be named emcenvchainer-upstream and point to the upstream_env/install
         assert "emcenvchainer-upstream" in spack_section["upstreams"]
@@ -879,7 +879,7 @@ class TestSpackManager:
         # Mock find command to return some specs
         find_result = Mock()
         find_result.returncode = 0
-        find_result.stdout = "hdf5@1.10.7\nnetcdf-c@4.7.4\ncmake@3.20.0"
+        find_result.stdout = "hdf5@=1.10.7\nnetcdf-c@=4.7.4\ncmake@=3.20.0"
         
         # Set up the side effect for multiple calls
         mock_run_spack.side_effect = [bootstrap_result, bootstrap_result, concretize_result, find_result]
@@ -3192,11 +3192,11 @@ spack:
         # definitions is a list: ('compilers', 'packages')
         pkgs_def = next(d for d in defs if "packages" in d)["packages"]
         # Should only contain foo, not scotch or existing*
-        assert pkgs_def == ["foo@2.0.0 opt"]
+        assert pkgs_def == ["foo@=2.0.0 opt"]
 
         # Scotch should have been appended to specs
         # original specs was [], now contains scotch
-        assert sp["specs"] == ["scotch@1.0.0"]
+        assert sp["specs"] == ["scotch@=1.0.0"]
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_with_packages_needing_edit(self, mock_upstream, spack_manager, tmp_path):
@@ -3596,7 +3596,7 @@ some_other_key: value
         # Should have created 'spack' section
         assert "spack" in cfg
         assert "specs" in cfg["spack"]
-        assert cfg["spack"]["specs"] == ["test-pkg@1.0.0"]
+        assert cfg["spack"]["specs"] == ["test-pkg@=1.0.0"]
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_definitions_else_branch(self, mock_upstream, spack_manager, tmp_path):
@@ -3642,8 +3642,8 @@ spack:
         
         # Specs should be set directly
         assert "specs" in sp
-        assert "pkg1@1.0.0" in sp["specs"]
-        assert "pkg2@2.0.0+opt" in sp["specs"]  # No space before variants in actual output
+        assert "pkg1@=1.0.0" in sp["specs"]
+        assert "pkg2@=2.0.0+opt" in sp["specs"]  # No space before variants in actual output
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_definitions_wrong_length(self, mock_upstream, spack_manager, tmp_path):
@@ -3684,7 +3684,7 @@ spack:
 
         # Definitions should be deleted
         assert "definitions" not in sp
-        assert sp["specs"] == ["newpkg@1.0.0"]
+        assert sp["specs"] == ["newpkg@=1.0.0"]
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={
         'test-pkg': {'version': '1.0.0', 'variants': '+feature -debug'}

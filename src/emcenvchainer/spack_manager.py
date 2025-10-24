@@ -34,6 +34,9 @@ class SpackManager:
         self.pending_recipes = {}  # Store recipes to be added when environment is created
         self.pending_checksums = []  # Store checksum operations to be performed when environment is created
         self.pending_git_commits = []  # Store git commit operations to be performed when environment is created
+        # Track packages whose recipes were retrieved from the remote Spack repository
+        # during pending recipe processing for this environment creation.
+        self.remote_recipes_added: List[str] = []
         self.logger = None  # Will be initialized when environment directory is created
 
         assert self.spack_exe.exists(), "Spack executable not found"
@@ -198,6 +201,9 @@ class SpackManager:
         Returns:
             List of packages that need manual editing
         """
+        # Reset tracker for remote-fetched package recipes for this environment build
+        self.remote_recipes_added = []
+
         if not self.pending_recipes:
             return []
 
@@ -243,6 +249,10 @@ class SpackManager:
 
                         # Fetch all patch/supporting files from remote
                         self._fetch_and_write_all_remote_files(package_name, package_dir)
+
+                        # Track that we wrote a remote recipe into envrepo for this package
+                        if package_name not in self.remote_recipes_added:
+                            self.remote_recipes_added.append(package_name)
 
                         # If manual edit requested, add to edit list
                         if needs_manual_edit:
@@ -459,8 +469,11 @@ class SpackManager:
             git_packages_needing_edit = self._process_pending_git_commits(str(env_path))
             packages_needing_edit.extend(git_packages_needing_edit)
                         
-            # Create custom repository structure in the environment if any packages need it
-            if packages_needing_edit or self.pending_checksums:
+            # Create custom repository structure when needed:
+            #  - packages flagged for manual edit;
+            #  - pending checksum operations; or
+            #  - remote recipes were retrieved
+            if packages_needing_edit or self.pending_checksums or self.remote_recipes_added:
                 self._ensure_env_repository(str(env_path))
             
             # Find and copy site/common directories from upstream environment
@@ -571,8 +584,12 @@ class SpackManager:
         # Create specs list from packages
         specs = [self._build_spec_string(pkg) for pkg in packages]
         
-        # Add custom repository if needed (at the beginning for priority)
-        if packages_needing_edit:
+        # Add custom repository if needed (at the beginning for priority).
+        # We consider packages_needing_edit OR the presence of an envrepo directory in the
+        # newly-created environment (it may have been created earlier for pending checksum
+        # operations). This ensures spack.yaml will reference the custom repo when it exists.
+        envrepo_dir = Path(env_path) / "envrepo"
+        if packages_needing_edit or envrepo_dir.exists():
             if 'repos' not in spack_section:
                 spack_section['repos'] = []
             # Insert at beginning for highest priority
