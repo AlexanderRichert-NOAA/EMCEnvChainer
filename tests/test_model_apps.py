@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch
-from src.emcenvchainer.model_apps import ModelApplication, ModelApplicationManager
+from emcenvchainer.model_apps import ModelApplication, ModelApplicationManager
 
 
 class TestModelApplication:
