@@ -1035,7 +1035,7 @@ class SpackManager:
             content,
         )
         content = re.sub(
-            r'self.spec["bison"].command.path',
+            r'self.spec\["bison"\].command.path',
             '" "',
             content,
         )
