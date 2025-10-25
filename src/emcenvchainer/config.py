@@ -81,7 +81,7 @@ class Config:
                     }
                 },
                 "gaea-c5": {
-                    "name": "Gaea C5 (NOAA)",
+                    "name": "Gaea C5 (NCRC/NOAA)",
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c5",
                     "hostname_patterns": ["gaea5[1-8].ncrc.gov"],
                     "model_applications": {
@@ -95,17 +95,31 @@ class Config:
                     }
                 },
                 "gaea-c6": {
-                    "name": "Gaea C6 (NOAA)",
+                    "name": "Gaea C6 (NCRC/NOAA)",
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c6",
                     "hostname_patterns": ["gaea6[0-8].ncrc.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
+                            "name": "ufs weather model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac6.intel.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                            "install_path_regex": r'prepend_path\("modulepath",\s*"([^"]+)modulefiles/core.?"\)'                        }
+                    }
+                },
+                "acorn": {
+                    "name": "Acorn (NOAA)",
+                    "spack_stack_path": "/lfs/h1/emc/nceplibs/noscrub/spack-stack",
+                    "hostname_patterns": ["a.*.wcoss2.ncep.noaa.gov"],
+                    "model_applications": {
+                        "ufs_weather_model": {
+                            "name": "ufs weather model",
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_acorn.intel.lua",
+                            ],
+                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
+                            "install_path_regex": r'prepend_path\("modulepath",\s*"([^"]+)modulefiles/core.?"\)'                        }
                     }
                 },
             },
