@@ -592,7 +592,9 @@ class SpackManager:
                     if 'packages' in spack_section['definitions'][i]:
                         spack_section['definitions'][i]['packages'] = []
                         for pkg in packages:
-                            if pkg['name'] not in ['cmake']:
+                            if pkg['name'] == 'scotch':
+                                spack_section['specs'].append(self._build_spec_string(pkg))
+                            elif pkg['name'] not in ['cmake']:
                                 spack_section['definitions'][i]['packages'].append(self._build_spec_string(pkg))
             else:
                 del(spack_section['definitions'])
