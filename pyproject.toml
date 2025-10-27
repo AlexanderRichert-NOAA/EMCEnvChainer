@@ -7,7 +7,7 @@ name = "emcenvchainer"
 version = "0.1.11"
 description = "A TUI utility for creating test installations using Spack environment chaining"
 readme = "README.md"
-license = {text = "LGPL-3.0-only"}
+license = "LGPL-3.0-only"
 authors = [
     {name = "Alex Richert"},
 ]
