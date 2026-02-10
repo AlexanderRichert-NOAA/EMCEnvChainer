@@ -105,7 +105,7 @@ class Config:
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac6.intel.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("modulepath",\s*"([^"]+)modulefiles/core.?"\)'                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
                 "acorn": {
@@ -119,7 +119,7 @@ class Config:
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_acorn.intel.lua",
                             ],
                             "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("modulepath",\s*"([^"]+)modulefiles/core.?"\)'                        }
+                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
                     }
                 },
             },
