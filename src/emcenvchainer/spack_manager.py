@@ -644,26 +644,29 @@ class SpackManager:
                 variants = info.get('variants', '')
                 compiler_flags = info.get('compiler_flags', '')
                 
-                # Use extra colon to override existing package settings
+                # Check if entry exists with or without colon, use colon version for overrides
                 package_key = f"{package_name}:"
+                base_key = package_name
+                
+                # If base_key exists but package_key doesn't, remove base_key (we'll use package_key)
+                if base_key in spack_section['packages'] and package_key not in spack_section['packages']:
+                    # Move existing config to colonized key
+                    spack_section['packages'][package_key] = spack_section['packages'].pop(base_key)
+                
+                # Ensure package_key exists
+                if package_key not in spack_section['packages']:
+                    spack_section['packages'][package_key] = {}
                 
                 # Add version constraint if available
                 if version:
-                    if package_key not in spack_section['packages']:
-                        spack_section['packages'][package_key] = {}
                     spack_section['packages'][package_key]['version'] = [version]
                 
                 # Add variant overrides if available
                 if variants:
-                    if package_key not in spack_section['packages']:
-                        spack_section['packages'][package_key] = {}
                     spack_section['packages'][package_key]['variants'] = variants
                 
                 # Add compiler flags via require field
                 if compiler_flags:
-                    if package_key not in spack_section['packages']:
-                        spack_section['packages'][package_key] = {}
-                    
                     # Just add the compiler flags (package name/version not needed in require)
                     spack_section['packages'][package_key]['require'] = [compiler_flags]
 

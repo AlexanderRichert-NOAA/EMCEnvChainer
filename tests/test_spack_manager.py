@@ -3338,3 +3338,48 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
         assert "variants" in cfg["spack"]["packages"]["zlib:"]
         assert cfg["spack"]["packages"]["zlib:"]["variants"] == "+pic"
 
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_get_upstream_package_info')
+    def test_create_spack_yaml_no_duplicate_package_entries(self, mock_get_info, mock_run_cmd, spack_manager, tmp_path):
+        """Test that packages don't get duplicate entries (with and without colon)."""
+        mock_get_info.return_value = {
+            "gcc-runtime": {
+                "version": "11.2.0",
+                "variants": "+shared",
+                "compiler_flags": 'cflags="-O2"'
+            }
+        }
+        
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        # Upstream has gcc-runtime without colon
+        yaml_path.write_text("""spack:
+  specs: []
+  packages:
+    gcc-runtime:
+      buildable: false
+""")
+        
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+        
+        class DummyPlatform:
+            config = {}
+        
+        result_yaml = spack_manager._create_spack_yaml(str(upstream), [], new_env, [], DummyPlatform())
+        
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(result_yaml)
+        
+        # Should only have gcc-runtime: (with colon), not both versions
+        assert "gcc-runtime:" in cfg["spack"]["packages"]
+        assert "gcc-runtime" not in cfg["spack"]["packages"]  # No entry without colon
+        
+        # Verify original buildable setting is preserved
+        assert cfg["spack"]["packages"]["gcc-runtime:"]["buildable"] is False
+        
+        # Verify new settings were added
+        assert "require" in cfg["spack"]["packages"]["gcc-runtime:"]
+        assert cfg["spack"]["packages"]["gcc-runtime:"]["require"][0] == 'cflags="-O2"'
+
