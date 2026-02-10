@@ -644,23 +644,9 @@ class SpackManager:
                 variants = info.get('variants', '')
                 compiler_flags = info.get('compiler_flags', '')
                 
-                # Check if entry exists with or without colon
+                # Use colon version for overrides
                 package_key = f"{package_name}:"
                 base_key = package_name
-                
-                # Check all possible keys for external configuration
-                is_external = False
-                for key in [package_key, base_key]:
-                    if key in spack_section['packages']:
-                        pkg_config = spack_section['packages'][key]
-                        if isinstance(pkg_config, dict) and 'externals' in pkg_config:
-                            is_external = True
-                            if self.logger:
-                                self.logger.info(f"Skipping variant/compiler flag overrides for external package: {package_name} (found externals in key '{key}')")
-                            break
-                
-                if is_external:
-                    continue
                 
                 # If base_key exists but package_key doesn't, move to colon version
                 if base_key in spack_section['packages'] and package_key not in spack_section['packages']:
@@ -1467,24 +1453,24 @@ class SpackManager:
                 self.logger.warning(f"Could not fetch all remote files for {package_name}: {e}")
     
     def _get_upstream_package_info(self, upstream_env_path: Path, packages: List[Dict]) -> Dict[str, Dict[str, str]]:
-        """Get version, variants, and compiler flags for ALL packages from the upstream environment.
+        """Get version, variants, compiler flags, and external status for ALL packages from the upstream environment.
         
         Args:
             upstream_env_path: Path to upstream environment directory
             packages: List of package specifications being added
             
         Returns:
-            Dictionary mapping package names to their info dictionaries with 'version', 'variants', and 'compiler_flags' keys
+            Dictionary mapping package names to their info dictionaries with 'version', 'variants', 'compiler_flags', and 'external' keys
         """
         package_info = {}
         
         try:
             SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
-            # Get ALL packages with version, variants, and compiler flags in one query
+            # Get ALL packages with version, variants, compiler flags, and external status
             result = self._run_spack_command([
                 '-e', str(upstream_env_path), 
                 'find', 
-                '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}'
+                '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}:EXTERNAL:{external}'
             ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
 
             if result.returncode != 0 or not result.stdout.strip():
@@ -1498,7 +1484,7 @@ class SpackManager:
                     continue
                     
                 try:
-                    # Parse the output format: name:VERSION:version:VARIANTS:variants:FLAGS:compiler_flags
+                    # Parse the output format: name:VERSION:version:VARIANTS:variants:FLAGS:compiler_flags:EXTERNAL:external
                     parts = line.strip().split(':VERSION:')
                     if len(parts) != 2:
                         continue
@@ -1506,16 +1492,24 @@ class SpackManager:
                     package_name = parts[0]
                     rest = parts[1]
                     
-                    # Split on :VARIANTS: and :FLAGS:
-                    if ':VARIANTS:' not in rest or ':FLAGS:' not in rest:
+                    # Split on :VARIANTS:, :FLAGS:, and :EXTERNAL:
+                    if ':VARIANTS:' not in rest or ':FLAGS:' not in rest or ':EXTERNAL:' not in rest:
                         continue
                     
-                    version_part, variants_and_flags = rest.split(':VARIANTS:', 1)
-                    variants_part, compiler_flags_part = variants_and_flags.split(':FLAGS:', 1)
+                    version_part, rest = rest.split(':VARIANTS:', 1)
+                    variants_part, rest = rest.split(':FLAGS:', 1)
+                    compiler_flags_part, external_part = rest.split(':EXTERNAL:', 1)
                     
                     version = version_part.strip()
                     variants = variants_part.strip()
                     compiler_flags = compiler_flags_part.strip()
+                    is_external = external_part.strip().lower() == 'true'
+                    
+                    # Skip external packages
+                    if is_external:
+                        if self.logger:
+                            self.logger.info(f"Skipping external package from upstream: {package_name}")
+                        continue
                     
                     # Remove patches from variants
                     variants = re.sub(r"patches=[\w,]+", "", variants).strip()

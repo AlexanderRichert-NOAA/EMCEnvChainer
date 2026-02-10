@@ -2375,13 +2375,13 @@ def func(): pass
     def test__get_upstream_package_info_parses_variants_and_excludes_patches(
         self, mock_run, spack_manager, tmp_path
     ):
-        """Should parse format with :FLAGS: field and strip out `patches=`."""
+        """Should parse format with :FLAGS: and :EXTERNAL: fields and strip out `patches=`."""
         pkg_name = 'foo'
         packages = [{'name': pkg_name}]
         # simulate spack find output with patches= to be removed
         mock_run.return_value = CompletedProcess(
             args=[], returncode=0,
-            stdout='foo:VERSION:1.2.3:VARIANTS:+mpi patches=abc,def:FLAGS:\n'
+            stdout='foo:VERSION:1.2.3:VARIANTS:+mpi patches=abc,def:FLAGS::EXTERNAL:False\n'
         )
 
         info = spack_manager._get_upstream_package_info(tmp_path, packages)
@@ -2400,7 +2400,7 @@ def func(): pass
         packages = [{'name': pkg_name, 'current_version': current_version}]
         mock_run.return_value = CompletedProcess(
             args=[], returncode=0,
-            stdout='bar:VERSION:8.8.8:VARIANTS:+openmp:FLAGS:\n'
+            stdout='bar:VERSION:8.8.8:VARIANTS:+openmp:FLAGS::EXTERNAL:False\n'
         )
 
         info = spack_manager._get_upstream_package_info(tmp_path, packages)
@@ -3272,9 +3272,10 @@ class Package(Package):
         """Test parsing packages with compiler flags from FLAGS field."""
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = """zlib:VERSION:1.2.11:VARIANTS:+pic:FLAGS:cflags="-O2"
-hdf5:VERSION:1.10.7:VARIANTS:+mpi +fortran:FLAGS:cflags="-O3" fflags="-fdefault-real-8"
-netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
+        mock_result.stdout = """zlib:VERSION:1.2.11:VARIANTS:+pic:FLAGS:cflags="-O2":EXTERNAL:False
+hdf5:VERSION:1.10.7:VARIANTS:+mpi +fortran:FLAGS:cflags="-O3" fflags="-fdefault-real-8":EXTERNAL:False
+netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS::EXTERNAL:False
+cmake:VERSION:3.20.0:VARIANTS:+shared:FLAGS::EXTERNAL:True
 """
         mock_result.stderr = ""
         mock_run_cmd.return_value = mock_result
@@ -3299,6 +3300,9 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
         assert "netcdf-c" in result
         assert "compiler_flags" not in result["netcdf-c"]
         assert result["netcdf-c"]["variants"] == "+mpi"
+        
+        # Verify cmake is filtered out (external)
+        assert "cmake" not in result
 
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_get_upstream_package_info')
@@ -3386,19 +3390,21 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_get_upstream_package_info')
     def test_create_spack_yaml_skips_external_packages(self, mock_get_info, mock_run_cmd, spack_manager, tmp_path):
-        """Test that external packages don't get variant/compiler flag overrides."""
+        """Test that external packages are filtered by _get_upstream_package_info."""
+        # _get_upstream_package_info already filters out externals
         mock_get_info.return_value = {
-            "cmake": {
-                "version": "3.20.0",
-                "variants": "+shared",
-                "compiler_flags": 'cflags="-O2"'
+            "hdf5": {
+                "version": "1.10.7",
+                "variants": "+mpi",
+                "compiler_flags": 'cflags="-O3"'
             }
+            # cmake not returned because it's external
         }
         
         upstream = tmp_path / "upstream"
         upstream.mkdir()
         yaml_path = upstream / "spack.yaml"
-        # cmake is configured as external
+        # cmake is configured as external in upstream
         yaml_path.write_text("""spack:
   specs: []
   packages:
@@ -3420,34 +3426,32 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
         yaml = YAML(typ="safe")
         cfg = yaml.load(result_yaml)
         
-        # cmake should still exist but with original external config
+        # cmake should still exist with original external config (untouched)
         assert "cmake" in cfg["spack"]["packages"]
         assert "externals" in cfg["spack"]["packages"]["cmake"]
-        
-        # Should NOT have added require, variants, or version overrides
-        assert "require" not in cfg["spack"]["packages"]["cmake"]
-        assert "variants" not in cfg["spack"]["packages"]["cmake"]
-        assert "version" not in cfg["spack"]["packages"]["cmake"]
-        
-        # Original buildable setting should be preserved
         assert cfg["spack"]["packages"]["cmake"]["buildable"] is False
+        
+        # hdf5 should have been added
+        assert "hdf5:" in cfg["spack"]["packages"]
+        assert "require" in cfg["spack"]["packages"]["hdf5:"]
 
     @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_get_upstream_package_info')
     def test_create_spack_yaml_skips_external_packages_with_colon(self, mock_get_info, mock_run_cmd, spack_manager, tmp_path):
-        """Test that external packages with colon keys don't get overrides."""
+        """Test that external packages (with colon keys) are filtered by _get_upstream_package_info."""
+        # _get_upstream_package_info filters out externals before returning
         mock_get_info.return_value = {
-            "openmpi": {
-                "version": "4.1.1",
-                "variants": "+shared",
-                "compiler_flags": 'cflags="-O2"'
+            "hdf5": {
+                "version": "1.10.7",
+                "variants": "+mpi"
             }
+            # openmpi not returned because it's external
         }
         
         upstream = tmp_path / "upstream"
         upstream.mkdir()
         yaml_path = upstream / "spack.yaml"
-        # openmpi configured as external with colon
+        # openmpi configured as external
         yaml_path.write_text("""spack:
   specs: []
   packages:
@@ -3469,12 +3473,10 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
         yaml = YAML(typ="safe")
         cfg = yaml.load(result_yaml)
         
-        # Should have openmpi: (with colon) since we check for externals
-        assert "openmpi:" in cfg["spack"]["packages"]
-        assert "externals" in cfg["spack"]["packages"]["openmpi:"]
+        # openmpi should still exist untouched with original external config
+        assert "openmpi" in cfg["spack"]["packages"]
+        assert "externals" in cfg["spack"]["packages"]["openmpi"]
         
-        # Should NOT have added overrides
-        assert "require" not in cfg["spack"]["packages"]["openmpi:"]
-        assert "variants" not in cfg["spack"]["packages"]["openmpi:"]
-        assert "version" not in cfg["spack"]["packages"]["openmpi:"]
+        # hdf5 should have been added
+        assert "hdf5:" in cfg["spack"]["packages"]
 
