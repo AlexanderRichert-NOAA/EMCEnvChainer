@@ -146,15 +146,17 @@ class TUIMenu:
 class PackageSpecDialog:
     """Dialog for specifying package details."""
     
-    def __init__(self, stdscr, spack_manager=None):
+    def __init__(self, stdscr, spack_manager=None, upstream_path=None):
         """Initialize dialog.
         
         Args:
             stdscr: Curses screen object
             spack_manager: Optional SpackManager for version validation
+            upstream_path: Optional path to upstream environment for hash selection
         """
         self.stdscr = stdscr
         self.spack_manager = spack_manager
+        self.upstream_path = upstream_path
     
     def get_package_spec(self, package_name: str = "", default_version: str = "") -> Optional[Dict]:
         """Get package specification from user with inline editing.
@@ -293,24 +295,26 @@ class PackageSpecDialog:
                 
                 # Query for upstream package hashes
                 try:
-                    upstream_hashes = self.spack_manager.get_upstream_package_hashes(package_name)
-                    if upstream_hashes:
-                        # Show hash selection menu
-                        hash_options = ["(Skip - don't lock to specific upstream spec)"]
-                        hash_options.extend([f"{h['hash']} - {h['spec']}" for h in upstream_hashes])
-                        
-                        menu = TUIMenu(self.stdscr, f"Select upstream spec to lock for {package_name}")
-                        help_text = "Select a specific upstream spec to lock, or skip to use any available version."
-                        selected_idx = menu.display_menu(hash_options, help_text=help_text)
-                        
-                        if selected_idx is None:
-                            # User cancelled
-                            continue
-                        elif selected_idx > 0:
-                            # User selected a hash (indices are 1-based because of skip option)
-                            fields["upstream_hash"] = upstream_hashes[selected_idx - 1]["hash"]
-                except Exception:
+                    if self.spack_manager and self.upstream_path:
+                        upstream_hashes = self.spack_manager.get_upstream_package_hashes(self.upstream_path, package_name)
+                        if upstream_hashes:
+                            # Show hash selection menu
+                            hash_options = ["(Skip - don't lock to specific upstream spec)"]
+                            hash_options.extend([f"{h['hash']} - {h['spec']}" for h in upstream_hashes])
+                            
+                            menu = TUIMenu(self.stdscr, f"Select upstream spec to lock for {package_name}")
+                            help_text = "Select a specific upstream spec to lock, or skip to use any available version."
+                            selected_idx = menu.display_menu(hash_options, help_text=help_text)
+                            
+                            if selected_idx is None:
+                                # User cancelled
+                                continue
+                            elif selected_idx > 0:
+                                # User selected a hash (indices are 1-based because of skip option)
+                                fields["upstream_hash"] = upstream_hashes[selected_idx - 1]["hash"]
+                except Exception as e:
                     # If upstream query fails, just continue without hash selection
+                    # Silently ignore to not break package selection
                     pass
                 
                 curses.curs_set(0)  # Hide cursor
@@ -1270,13 +1274,13 @@ class EmcEnvChainerTUI:
         spack_manager = SpackManager(spack_root, self.config)
         
         if installation["type"] == "model_application":
-            packages = self._get_packages_from_model_app(stdscr, installation, spack_manager)
+            packages = self._get_packages_from_model_app(stdscr, installation, spack_manager, upstream_path)
         else:
-            packages = self._get_packages_manually(stdscr, spack_manager)
+            packages = self._get_packages_manually(stdscr, spack_manager, upstream_path)
         
         return packages, spack_manager
     
-    def _get_packages_from_model_app(self, stdscr, installation: Dict, spack_manager: SpackManager) -> Optional[List[Dict]]:
+    def _get_packages_from_model_app(self, stdscr, installation: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[List[Dict]]:
         """Get packages from model application dependencies using radio button selection.
         
         Args:
@@ -1340,9 +1344,9 @@ class EmcEnvChainerTUI:
             return None
         
         # Use radio button selection for packages
-        return self._select_packages_with_radio_buttons(stdscr, all_packages, selected_app, spack_manager)
+        return self._select_packages_with_radio_buttons(stdscr, all_packages, selected_app, spack_manager, upstream_path)
     
-    def _select_packages_with_radio_buttons(self, stdscr, all_packages: List[Dict], selected_app, spack_manager: SpackManager) -> Optional[List[Dict]]:
+    def _select_packages_with_radio_buttons(self, stdscr, all_packages: List[Dict], selected_app, spack_manager: SpackManager, upstream_path: str = None) -> Optional[List[Dict]]:
         """Select packages using radio button interface.
         
         Args:
@@ -1382,7 +1386,7 @@ class EmcEnvChainerTUI:
             pkg = all_packages[idx]
             
             # Get package specification with version and variants
-            spec = self._get_package_specification(stdscr, pkg, spack_manager)
+            spec = self._get_package_specification(stdscr, pkg, spack_manager, upstream_path)
             if spec:
                 selected_packages.append(spec)
         
@@ -1390,33 +1394,35 @@ class EmcEnvChainerTUI:
 
         return selected_packages if selected_packages else None
     
-    def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager) -> Optional[Dict]:
+    def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[Dict]:
         """Get detailed package specification (version, variants) from user.
         
         Args:
             stdscr: Curses screen object
             pkg: Package information
             spack_manager: SpackManager instance for version validation
+            upstream_path: Optional path to upstream environment for hash selection
             
         Returns:
             Package specification dict, None if cancelled
         """
         # Use existing PackageSpecDialog for detailed configuration
-        dialog = PackageSpecDialog(stdscr, spack_manager)
+        dialog = PackageSpecDialog(stdscr, spack_manager, upstream_path)
         return dialog.get_package_spec(pkg["name"], pkg["current_version"])
     
-    def _get_packages_manually(self, stdscr, spack_manager: SpackManager) -> Optional[List[Dict]]:
+    def _get_packages_manually(self, stdscr, spack_manager: SpackManager, upstream_path: str = None) -> Optional[List[Dict]]:
         """Get package specifications manually from user.
         
         Args:
             stdscr: Curses screen object
             spack_manager: SpackManager instance for version validation
+            upstream_path: Optional path to upstream environment for hash selection
             
         Returns:
             List of package specifications, None if cancelled
         """
         packages = []
-        dialog = PackageSpecDialog(stdscr, spack_manager)
+        dialog = PackageSpecDialog(stdscr, spack_manager, upstream_path)
         
         while True:
             menu = TUIMenu(stdscr, "Package Specifications")

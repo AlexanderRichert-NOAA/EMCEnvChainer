@@ -1711,8 +1711,8 @@ class TestEmcEnvChainerTUI:
         with patch.object(tui_app, '_get_packages_manually', return_value=[]) as mock_get_packages:
             tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
             
-            # Verify _get_packages_manually was called with the manager
-            mock_get_packages.assert_called_once_with(mock_stdscr, mock_spack_manager)
+            # Verify _get_packages_manually was called with the manager and upstream_path
+            mock_get_packages.assert_called_once_with(mock_stdscr, mock_spack_manager, "/path/to/install")
     
     @patch('os.path.exists')
     @patch('emcenvchainer.tui.SpackManager')
@@ -1738,8 +1738,8 @@ class TestEmcEnvChainerTUI:
         with patch.object(tui_app, '_get_packages_from_model_app', return_value=[]) as mock_get_packages:
             tui_app._get_package_specifications_with_manager(mock_stdscr, installation)
             
-            # Verify _get_packages_from_model_app was called with the manager
-            mock_get_packages.assert_called_once_with(mock_stdscr, installation, mock_spack_manager)
+            # Verify _get_packages_from_model_app was called with the manager and upstream_path
+            mock_get_packages.assert_called_once_with(mock_stdscr, installation, mock_spack_manager, "/stack/spack-stack-1.6.0/envs/env/install")
     
     @patch('emcenvchainer.tui.TUIMenu')
     def test_get_packages_from_model_app_success(self, mock_menu_class, tui_app, mock_stdscr):
@@ -1906,7 +1906,7 @@ class TestEmcEnvChainerTUI:
         
         # Capture what gets passed to _select_packages_with_radio_buttons
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
             nonlocal captured_packages
             captured_packages = packages
             return []
@@ -1957,7 +1957,7 @@ class TestEmcEnvChainerTUI:
         }
         
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
             nonlocal captured_packages
             captured_packages = packages
             return []
@@ -1991,7 +1991,7 @@ class TestEmcEnvChainerTUI:
         }
         
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
             nonlocal captured_packages
             captured_packages = packages
             return []
@@ -2361,8 +2361,8 @@ class TestEmcEnvChainerTUI:
         
         result = tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
         
-        # Verify PackageSpecDialog was created with correct args
-        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager)
+        # Verify PackageSpecDialog was created with correct args (including upstream_path=None)
+        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager, None)
         
         # Verify get_package_spec was called with package name and version
         mock_dialog.get_package_spec.assert_called_once_with("netcdf-c", "4.9.0")
@@ -2489,8 +2489,8 @@ class TestEmcEnvChainerTUI:
         
         tui_app._get_package_specification(mock_stdscr, pkg, mock_spack_manager)
         
-        # Verify the exact SpackManager instance was passed
-        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager)
+        # Verify the exact SpackManager instance was passed (along with upstream_path=None)
+        mock_dialog_class.assert_called_once_with(mock_stdscr, mock_spack_manager, None)
         assert mock_dialog_class.call_args[0][1] is mock_spack_manager
     
     @patch('emcenvchainer.tui.PackageSpecDialog')
