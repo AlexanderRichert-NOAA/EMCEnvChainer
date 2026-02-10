@@ -644,11 +644,19 @@ class SpackManager:
                 variants = info.get('variants', '')
                 compiler_flags = info.get('compiler_flags', '')
                 
-                # Check if entry exists with or without colon, use colon version for overrides
+                # Check if entry exists with or without colon
                 package_key = f"{package_name}:"
                 base_key = package_name
                 
-                # If base_key exists but package_key doesn't, remove base_key (we'll use package_key)
+                # Check if this package has externals configuration (skip if it does)
+                existing_config = spack_section['packages'].get(package_key) or spack_section['packages'].get(base_key)
+                if existing_config and 'externals' in existing_config:
+                    # Don't override external package configurations
+                    if self.logger:
+                        self.logger.info(f"Skipping variant/compiler flag overrides for external package: {package_name}")
+                    continue
+                
+                # If base_key exists but package_key doesn't, move to colon version
                 if base_key in spack_section['packages'] and package_key not in spack_section['packages']:
                     # Move existing config to colonized key
                     spack_section['packages'][package_key] = spack_section['packages'].pop(base_key)
