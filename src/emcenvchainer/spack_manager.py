@@ -642,6 +642,9 @@ class SpackManager:
             for package_name, info in package_info.items():
                 version = info.get('version', '')
                 variants = info.get('variants', '')
+                cflags = info.get('cflags', '')
+                cxxflags = info.get('cxxflags', '')
+                fflags = info.get('fflags', '')
                 
                 # Use extra colon to override existing package settings
                 package_key = f"{package_name}:"
@@ -652,11 +655,31 @@ class SpackManager:
                         spack_section['packages'][package_key] = {}
                     spack_section['packages'][package_key]['version'] = [version]
                 
-                # Add variant overrides if available
+                # Add variant overrides if available (soft preferences)
                 if variants:
                     if package_key not in spack_section['packages']:
                         spack_section['packages'][package_key] = {}
                     spack_section['packages'][package_key]['variants'] = variants
+                
+                # Add compiler flags as requirements if present
+                if cflags or cxxflags or fflags:
+                    if package_key not in spack_section['packages']:
+                        spack_section['packages'][package_key] = {}
+                    if 'require' not in spack_section['packages'][package_key]:
+                        spack_section['packages'][package_key]['require'] = []
+                    
+                    # Build requirement spec with compiler flags
+                    flag_spec_parts = []
+                    if cflags:
+                        flag_spec_parts.append(f"cflags=\"{cflags}\"")
+                    if cxxflags:
+                        flag_spec_parts.append(f"cxxflags=\"{cxxflags}\"")
+                    if fflags:
+                        flag_spec_parts.append(f"fflags=\"{fflags}\"")
+                    
+                    if flag_spec_parts:
+                        flag_spec = " ".join(flag_spec_parts)
+                        spack_section['packages'][package_key]['require'].append(flag_spec)
 
         # Always set common build deps (cmake, gmake, ...) as non-buildable
         always_upstream_packages = ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils']
@@ -1441,14 +1464,14 @@ class SpackManager:
                 self.logger.warning(f"Could not fetch all remote files for {package_name}: {e}")
     
     def _get_upstream_package_info(self, upstream_env_path: Path, packages: List[Dict]) -> Dict[str, Dict[str, str]]:
-        """Get version and variants (except 'patches') for packages from the upstream environment.
+        """Get version, variants, and compiler flags for packages from the upstream environment.
         
         Args:
             upstream_env_path: Path to upstream environment directory
             packages: List of package specifications being added
             
         Returns:
-            Dictionary mapping package names to their info dictionaries with 'version' and 'variants' keys
+            Dictionary mapping package names to their info dictionaries with 'version', 'variants', and compiler flags keys
         """
         package_info = {}
         
@@ -1457,11 +1480,11 @@ class SpackManager:
             
             try:
                 SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
-                # Use spack find with format to get both version and variants from upstream environment
+                # Use spack find with format to get version, variants, and compiler flags from upstream environment
                 result = self._run_spack_command([
                     '-e', str(upstream_env_path), 
                     'find', 
-                    '--format', '{version}:VARIANTS:{variants}', 
+                    '--format', '{version}:VARIANTS:{variants}:CFLAGS:{compiler_flags.cflags}:CXXFLAGS:{compiler_flags.cxxflags}:FFLAGS:{compiler_flags.fflags}', 
                     package_name
                 ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
 
@@ -1469,25 +1492,62 @@ class SpackManager:
                     # Take the first line in case there are multiple copies
                     info_line = result.stdout.strip().split('\n')[0]
                     
-                    # Parse the output format: version<VARIANTS>variants
+                    # Parse the output format: version:VARIANTS:variants:CFLAGS:cflags:CXXFLAGS:cxxflags:FFLAGS:fflags
                     if info_line and info_line.strip():
                         info_line = info_line.strip()
                         
-                        # Split on the delimiter to get version and variants
-                        version, variants = info_line.split(":VARIANTS:")
+                        # Split on the delimiters to get version, variants, and compiler flags
+                        parts = info_line.split(":VARIANTS:")
+                        version = parts[0]
+                        remaining = parts[1] if len(parts) > 1 else ""
+                        
+                        # Further split to extract variants and compiler flags
+                        flag_parts = remaining.split(":CFLAGS:")
+                        variants = flag_parts[0] if len(flag_parts) > 0 else ""
                         variants = re.sub(r"patches=[\w,]+", "", variants).strip()
+                        
+                        # Extract compiler flags
+                        cflags = ""
+                        cxxflags = ""
+                        fflags = ""
+                        
+                        if len(flag_parts) > 1:
+                            cflags_remaining = flag_parts[1].split(":CXXFLAGS:")
+                            cflags = cflags_remaining[0].strip() if len(cflags_remaining) > 0 else ""
+                            
+                            if len(cflags_remaining) > 1:
+                                cxxflags_remaining = cflags_remaining[1].split(":FFLAGS:")
+                                cxxflags = cxxflags_remaining[0].strip() if len(cxxflags_remaining) > 0 else ""
+                                
+                                if len(cxxflags_remaining) > 1:
+                                    fflags = cxxflags_remaining[1].strip()
                         
                         # Store the info for this package
                         package_info[package_name] = {
                             'variants': variants,
                         }
+                        
+                        # Add compiler flags if present
+                        if cflags:
+                            package_info[package_name]['cflags'] = cflags
+                        if cxxflags:
+                            package_info[package_name]['cxxflags'] = cxxflags
+                        if fflags:
+                            package_info[package_name]['fflags'] = fflags
 
                         # Use version from modulefile in case of multiple versions in upstream env.
                         if 'current_version' in pkg:
                             package_info[package_name]['version'] = pkg['current_version']
                         
                         if self.logger:
-                            self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}")
+                            log_msg = f"Found upstream info for {package_name}: version={version}, variants={variants}"
+                            if cflags:
+                                log_msg += f", cflags={cflags}"
+                            if cxxflags:
+                                log_msg += f", cxxflags={cxxflags}"
+                            if fflags:
+                                log_msg += f", fflags={fflags}"
+                            self.logger.info(log_msg)
                     else:
                         if self.logger:
                             self.logger.warning(f"No info found for {package_name} in upstream environment")
