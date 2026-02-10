@@ -1637,12 +1637,12 @@ class EmcEnvChainerTUI:
                 menu.display_info(failure_msg)
                 return
             
-            # Show concretization output
-            self.display_scrollable_text(stdscr, ["Proceed with build?", "'spack concretize' output below", " > '[^]': existing package from upstream installation", " > ' - ': package to be built"], concretize_output)
-
-            # Generate package versions script (after concretization, before installation)
+            # Generate package versions script (after concretization, before showing output)
             menu.display_info("Generating package versions script...", wait_for_key=False)
             self._generate_package_versions_script(spack_manager, env_path)
+            
+            # Show concretization output
+            self.display_scrollable_text(stdscr, ["Proceed with build?", "'spack concretize' output below", " > '[^]': existing package from upstream installation", " > ' - ': package to be built"], concretize_output)
 
             # Install packages
             install_success = self.run_interactive_install(stdscr, spack_manager, env_path)
