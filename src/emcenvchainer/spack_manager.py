@@ -642,6 +642,7 @@ class SpackManager:
             for package_name, info in package_info.items():
                 version = info.get('version', '')
                 variants = info.get('variants', '')
+                compiler_flags = info.get('compiler_flags', '')
                 
                 # Use extra colon to override existing package settings
                 package_key = f"{package_name}:"
@@ -657,6 +658,14 @@ class SpackManager:
                     if package_key not in spack_section['packages']:
                         spack_section['packages'][package_key] = {}
                     spack_section['packages'][package_key]['variants'] = variants
+                
+                # Add compiler flags via require field
+                if compiler_flags:
+                    if package_key not in spack_section['packages']:
+                        spack_section['packages'][package_key] = {}
+                    
+                    # Just add the compiler flags (package name/version not needed in require)
+                    spack_section['packages'][package_key]['require'] = [compiler_flags]
 
         # Always set common build deps (cmake, gmake, ...) as non-buildable
         always_upstream_packages = ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils']
@@ -1441,62 +1450,88 @@ class SpackManager:
                 self.logger.warning(f"Could not fetch all remote files for {package_name}: {e}")
     
     def _get_upstream_package_info(self, upstream_env_path: Path, packages: List[Dict]) -> Dict[str, Dict[str, str]]:
-        """Get version and variants (except 'patches') for packages from the upstream environment.
+        """Get version, variants, and compiler flags for ALL packages from the upstream environment.
         
         Args:
             upstream_env_path: Path to upstream environment directory
             packages: List of package specifications being added
             
         Returns:
-            Dictionary mapping package names to their info dictionaries with 'version' and 'variants' keys
+            Dictionary mapping package names to their info dictionaries with 'version', 'variants', and 'compiler_flags' keys
         """
         package_info = {}
         
-        for pkg in packages:
-            package_name = pkg["name"]
-            
-            try:
-                SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
-                # Use spack find with format to get both version and variants from upstream environment
-                result = self._run_spack_command([
-                    '-e', str(upstream_env_path), 
-                    'find', 
-                    '--format', '{version}:VARIANTS:{variants}', 
-                    package_name
-                ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+        try:
+            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
+            # Get ALL packages with version, variants, and compiler flags in one query
+            result = self._run_spack_command([
+                '-e', str(upstream_env_path), 
+                'find', 
+                '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}'
+            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
 
-                if result.returncode == 0 and result.stdout.strip():
-                    # Take the first line in case there are multiple copies
-                    info_line = result.stdout.strip().split('\n')[0]
-                    
-                    # Parse the output format: version<VARIANTS>variants
-                    if info_line and info_line.strip():
-                        info_line = info_line.strip()
-                        
-                        # Split on the delimiter to get version and variants
-                        version, variants = info_line.split(":VARIANTS:")
-                        variants = re.sub(r"patches=[\w,]+", "", variants).strip()
-                        
-                        # Store the info for this package
-                        package_info[package_name] = {
-                            'variants': variants,
-                        }
-
-                        # Use version from modulefile in case of multiple versions in upstream env.
-                        if 'current_version' in pkg:
-                            package_info[package_name]['version'] = pkg['current_version']
-                        
-                        if self.logger:
-                            self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}")
-                    else:
-                        if self.logger:
-                            self.logger.warning(f"No info found for {package_name} in upstream environment")
-                else:
-                    if self.logger:
-                        self.logger.warning(f"Package {package_name} not found in upstream environment")
-                    
-            except Exception as e:
+            if result.returncode != 0 or not result.stdout.strip():
                 if self.logger:
-                    self.logger.warning(f"Could not retrieve info for {package_name}: {e}")
+                    self.logger.warning(f"Could not list packages from upstream environment")
+                return package_info
+            
+            # Process each package found in upstream
+            for line in result.stdout.strip().split('\n'):
+                if not line or not line.strip():
+                    continue
+                    
+                try:
+                    # Parse the output format: name:VERSION:version:VARIANTS:variants:FLAGS:compiler_flags
+                    parts = line.strip().split(':VERSION:')
+                    if len(parts) != 2:
+                        continue
+                        
+                    package_name = parts[0]
+                    rest = parts[1]
+                    
+                    # Split on :VARIANTS: and :FLAGS:
+                    if ':VARIANTS:' not in rest or ':FLAGS:' not in rest:
+                        continue
+                    
+                    version_part, variants_and_flags = rest.split(':VARIANTS:', 1)
+                    variants_part, compiler_flags_part = variants_and_flags.split(':FLAGS:', 1)
+                    
+                    version = version_part.strip()
+                    variants = variants_part.strip()
+                    compiler_flags = compiler_flags_part.strip()
+                    
+                    # Remove patches from variants
+                    variants = re.sub(r"patches=[\w,]+", "", variants).strip()
+                    
+                    # Store info for this package
+                    package_info[package_name] = {}
+                    
+                    if variants:
+                        package_info[package_name]['variants'] = variants
+                    
+                    if compiler_flags:
+                        package_info[package_name]['compiler_flags'] = compiler_flags
+                    
+                    # Check if this package is in the packages list being updated
+                    # If so, use version from modulefile in case of multiple versions in upstream env
+                    for pkg in packages:
+                        if pkg['name'] == package_name and 'current_version' in pkg:
+                            package_info[package_name]['version'] = pkg['current_version']
+                            break
+                    else:
+                        # Not in update list, use upstream version
+                        package_info[package_name]['version'] = version
+                    
+                    if self.logger:
+                        self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}, compiler_flags={compiler_flags}")
+                            
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Error parsing package info line '{line}': {e}")
+                    continue
+                    
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Could not retrieve package info from upstream: {e}")
  
         return package_info

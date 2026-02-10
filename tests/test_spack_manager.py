@@ -2375,30 +2375,20 @@ def func(): pass
     def test__get_upstream_package_info_parses_variants_and_excludes_patches(
         self, mock_run, spack_manager, tmp_path
     ):
-        """Should parse `{version}:VARIANTS:{variants}` and strip out `patches=`."""
+        """Should parse format with :FLAGS: field and strip out `patches=`."""
         pkg_name = 'foo'
         packages = [{'name': pkg_name}]
         # simulate spack find output with patches= to be removed
         mock_run.return_value = CompletedProcess(
             args=[], returncode=0,
-            stdout='1.2.3:VARIANTS:+mpi patches=abc,def\n'
+            stdout='foo:VERSION:1.2.3:VARIANTS:+mpi patches=abc,def:FLAGS:\n'
         )
 
         info = spack_manager._get_upstream_package_info(tmp_path, packages)
 
         assert pkg_name in info
         assert info[pkg_name]['variants'] == '+mpi'
-        assert 'version' not in info[pkg_name]
-
-        # ensure we invoked spack find with correct args
-        called_args = mock_run.call_args[0][0]
-        expected = [
-            '-e', str(tmp_path),
-            'find',
-            '--format', '{version}:VARIANTS:{variants}',
-            pkg_name
-        ]
-        assert called_args == expected
+        assert info[pkg_name]['version'] == '1.2.3'
 
     @patch.object(SpackManager, '_run_spack_command')
     def test__get_upstream_package_info_uses_current_version_if_provided(
@@ -2410,7 +2400,7 @@ def func(): pass
         packages = [{'name': pkg_name, 'current_version': current_version}]
         mock_run.return_value = CompletedProcess(
             args=[], returncode=0,
-            stdout='8.8.8:VARIANTS:+openmp\n'
+            stdout='bar:VERSION:8.8.8:VARIANTS:+openmp:FLAGS:\n'
         )
 
         info = spack_manager._get_upstream_package_info(tmp_path, packages)
@@ -3276,4 +3266,75 @@ class Package(Package):
         else:
             # For non-scotch packages: content unchanged
             assert filtered == content
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_upstream_package_info_with_compiler_flags(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test parsing packages with compiler flags from FLAGS field."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """zlib:VERSION:1.2.11:VARIANTS:+pic:FLAGS:cflags="-O2"
+hdf5:VERSION:1.10.7:VARIANTS:+mpi +fortran:FLAGS:cflags="-O3" fflags="-fdefault-real-8"
+netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
+"""
+        mock_result.stderr = ""
+        mock_run_cmd.return_value = mock_result
+        
+        upstream_path = tmp_path / "upstream"
+        upstream_path.mkdir()
+        
+        result = spack_manager._get_upstream_package_info(upstream_path, [])
+        
+        # Verify zlib has compiler flags
+        assert "zlib" in result
+        assert result["zlib"]["compiler_flags"] == 'cflags="-O2"'
+        assert result["zlib"]["variants"] == "+pic"
+        assert result["zlib"]["version"] == "1.2.11"
+        
+        # Verify hdf5 has multiple compiler flags
+        assert "hdf5" in result
+        assert result["hdf5"]["compiler_flags"] == 'cflags="-O3" fflags="-fdefault-real-8"'
+        assert result["hdf5"]["variants"] == "+mpi +fortran"
+        
+        # Verify netcdf-c has no compiler flags
+        assert "netcdf-c" in result
+        assert "compiler_flags" not in result["netcdf-c"]
+        assert result["netcdf-c"]["variants"] == "+mpi"
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_get_upstream_package_info')
+    def test_create_spack_yaml_compiler_flags_in_require(self, mock_get_info, mock_run_cmd, spack_manager, tmp_path):
+        """Test compiler flags are added to packages:<pkg>:require field."""
+        mock_get_info.return_value = {
+            "zlib": {
+                "version": "1.2.11",
+                "variants": "+pic",
+                "compiler_flags": 'cflags="-O2"'
+            }
+        }
+        
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        yaml_path.write_text("spack:\n  specs: []\n  packages: {}\n")
+        
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+        
+        class DummyPlatform:
+            config = {}
+        
+        result_yaml = spack_manager._create_spack_yaml(str(upstream), [], new_env, [], DummyPlatform())
+        
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(result_yaml)
+        
+        # Verify compiler flags are in require field
+        assert "zlib:" in cfg["spack"]["packages"]
+        assert "require" in cfg["spack"]["packages"]["zlib:"]
+        require_spec = cfg["spack"]["packages"]["zlib:"]["require"][0]
+        assert require_spec == 'cflags="-O2"'
+        
+        # Verify variants are separate
+        assert "variants" in cfg["spack"]["packages"]["zlib:"]
+        assert cfg["spack"]["packages"]["zlib:"]["variants"] == "+pic"
 
