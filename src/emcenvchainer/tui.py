@@ -158,6 +158,32 @@ class PackageSpecDialog:
         self.spack_manager = spack_manager
         self.upstream_path = upstream_path
     
+    def _query_upstream_hashes(self, package_name: str) -> list:
+        """Query upstream environment for package hashes.
+        
+        Args:
+            package_name: Name of the package to query
+            
+        Returns:
+            List of dicts with 'hash' and 'spec' keys, or empty list if query fails
+        """
+        if not self.spack_manager or not self.upstream_path:
+            return []
+        
+        try:
+            # Convert install path to env path if needed
+            from pathlib import Path
+            upstream_path_obj = Path(self.upstream_path)
+            if upstream_path_obj.name == 'install':
+                upstream_env_path = upstream_path_obj.parent
+            else:
+                upstream_env_path = upstream_path_obj
+            
+            return self.spack_manager.get_upstream_package_hashes(upstream_env_path, package_name)
+        except Exception:
+            # If upstream query fails, return empty list
+            return []
+    
     def get_package_spec(self, package_name: str = "", default_version: str = "") -> Optional[Dict]:
         """Get package specification from user with inline editing.
         
@@ -171,17 +197,24 @@ class PackageSpecDialog:
         fields = {
             "name": package_name,
             "version": default_version,
-            "variants": ""
+            "variants": "",
+            "upstream_hash": ""
         }
+        
+        # Available upstream hashes for selection
+        available_hashes = []
         
         # Track if validation has been performed for this dialog session
         validation_performed = False
         # Track the last validated package spec to detect changes
         last_validated_spec = None
+        # Track package name to detect changes and re-query hashes
+        last_package_name = ""
         
-        field_names = ["Package Name", "Version", "Variants"]
+        field_names = ["Package Name", "Version", "Variants", "Upstream Hash (lock in upstream package; optional)"]
         field_keys = list(fields.keys())
         current_field = 0
+        selected_hash_index = -1  # Track which hash is selected (-1 = none selected)
         
         # Track cursor position for each field (only for actual text fields)
         cursors = [len(fields[k]) for k in fields.keys()] + [0]  # Add 0 for continue button
@@ -190,6 +223,19 @@ class PackageSpecDialog:
         while True:
             self.stdscr.clear()
             height, width = self.stdscr.getmaxyx()
+            
+            # Check if package name has changed and re-query hashes if needed
+            current_package_name = fields["name"].strip()
+            if current_package_name != last_package_name:
+                last_package_name = current_package_name
+                if current_package_name:
+                    available_hashes = self._query_upstream_hashes(current_package_name)
+                else:
+                    available_hashes = []
+                # Clear upstream_hash field if package name changed
+                if fields["upstream_hash"]:
+                    fields["upstream_hash"] = ""
+                    cursors[field_keys.index("upstream_hash")] = 0
             
             # Title
             title = "Package Specification"
@@ -201,6 +247,24 @@ class PackageSpecDialog:
             final_cursor_x = 0
             for i, (field_key, field_label) in enumerate(zip(field_keys, field_names)):
                 y = 5 + i * 2
+                
+                # Special rendering for upstream_hash field - show as list
+                if field_key == "upstream_hash" and available_hashes:
+                    self.stdscr.addstr(y, 4, f"{field_label}:", curses.A_BOLD if i == current_field else curses.A_NORMAL)
+                    
+                    # Display hash list below
+                    list_start_y = y + 1
+                    
+                    for idx, h in enumerate(available_hashes[:5]):  # Show first 5
+                        display_line = f"{h['hash']} - {h['spec'][:width-30]}"
+                        self.stdscr.addstr(list_start_y + idx, 6, display_line,
+                                         curses.A_REVERSE if i == current_field and selected_hash_index == idx else curses.A_NORMAL)
+                    
+                    if len(available_hashes) > 5:
+                        self.stdscr.addstr(list_start_y + 5, 6, f"... and {len(available_hashes) - 5} more (use ↑/↓)", curses.A_DIM)
+                    
+                    # Skip the normal input box rendering
+                    continue
                 
                 # Regular text field with label and input box
                 self.stdscr.addstr(y, 4, f"{field_label}:")
@@ -238,14 +302,17 @@ class PackageSpecDialog:
                     final_cursor_y = box_y
                     final_cursor_x = box_x + 1 + display_cursor
             
-            # Position cursor and make it visible
-            curses.curs_set(1)  # Show cursor
-            self.stdscr.move(final_cursor_y, final_cursor_x)
+            # Position cursor and make it visible (only for non-hash fields)
+            if field_keys[current_field] != "upstream_hash":
+                curses.curs_set(1)  # Show cursor
+                self.stdscr.move(final_cursor_y, final_cursor_x)
+            else:
+                curses.curs_set(0)  # Hide cursor when on hash field
             
             # Instructions
             instructions = [
-                "Use ↑/↓ or Tab to navigate fields, type to edit, ←/→ to move cursor",
-                "Backspace/Delete/Home/End supported. Press Enter to continue."
+                "Use ↑/↓ or Tab to navigate. On hash field, ↑/↓ selects from list.",
+                "Type to edit text fields. Backspace/Delete/Home/End. Enter to continue."
             ]
             for i, instruction in enumerate(instructions):
                 self.stdscr.addstr(height - 4 + i, 2, instruction)
@@ -255,16 +322,77 @@ class PackageSpecDialog:
             # Handle input
             key = self.stdscr.getch()
             
-            if key == curses.KEY_UP and current_field > 0:
-                current_field -= 1
-            elif key == curses.KEY_DOWN and current_field < len(field_keys) - 1:
-                current_field += 1
+            if key == curses.KEY_UP:
+                if current_field > 0:
+                    # Moving up between fields
+                    if field_keys[current_field] == "upstream_hash":
+                        # Apply selected hash before leaving
+                        if available_hashes and selected_hash_index >= 0:
+                            fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
+                        else:
+                            fields["upstream_hash"] = ""
+                    current_field -= 1
+                    selected_hash_index = -1  # Reset hash selection
+                elif field_keys[current_field] == "upstream_hash" and available_hashes:
+                    # Navigate within hash list
+                    if selected_hash_index > 0:
+                        selected_hash_index -= 1
+                    else:
+                        # At top of list, move to previous field
+                        if current_field > 0:
+                            if selected_hash_index >= 0:
+                                fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
+                            else:
+                                fields["upstream_hash"] = ""
+                            current_field -= 1
+                            selected_hash_index = -1
+            elif key == curses.KEY_DOWN:
+                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                    # Navigate within hash list
+                    if selected_hash_index < len(available_hashes) - 1:
+                        selected_hash_index += 1
+                    else:
+                        # At bottom of hash list, move to next field
+                        if available_hashes and selected_hash_index >= 0:
+                            fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
+                        else:
+                            fields["upstream_hash"] = ""
+                        if current_field < len(field_keys) - 1:
+                            current_field += 1
+                            selected_hash_index = -1
+                elif current_field < len(field_keys) - 1:
+                    # Moving down between fields
+                    current_field += 1
+                    # Auto-select first hash if entering hash field
+                    if field_keys[current_field] == "upstream_hash" and available_hashes:
+                        selected_hash_index = 0
+                    else:
+                        selected_hash_index = -1
             elif key == ord('\t'):
+                # Tab moves to next field
+                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                    # Apply selected hash before leaving
+                    if selected_hash_index >= 0:
+                        fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
+                    else:
+                        fields["upstream_hash"] = ""
                 current_field = (current_field + 1) % len(field_keys)
+                # Auto-select first hash if entering hash field
+                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                    selected_hash_index = 0
+                else:
+                    selected_hash_index = -1
             elif key in [curses.KEY_ENTER, ord('\n'), ord('\r')]:
                 if not fields["name"].strip():
                     self._show_error("Package name is required!")
                     continue
+                
+                # Apply selected hash if on hash field
+                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                    if selected_hash_index >= 0:
+                        fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
+                    else:
+                        fields["upstream_hash"] = ""
                 
                 package_name = fields["name"].strip()
                 assert package_name, "Package name cannot be empty"
@@ -279,10 +407,10 @@ class PackageSpecDialog:
                 
                 # Check if validation has already been performed for this dialog session
                 if validation_performed:
-                    # Validation already done, proceed to hash selection
+                    # Validation already done, proceed
                     pass
                 elif self.spack_manager.check_package_version_exists(package_name, version) or not version:
-                    # Version exists or isn't set; proceed to hash selection
+                    # Version exists or isn't set
                     pass
                 else:
                     # Version doesn't exist, show validation screen
@@ -292,38 +420,6 @@ class PackageSpecDialog:
                         # Version validation succeeded, mark as validated
                         validation_performed = True
                         last_validated_spec = current_spec
-                
-                # Query for upstream package hashes
-                try:
-                    if self.spack_manager and self.upstream_path:
-                        # Convert install path to env path if needed
-                        from pathlib import Path
-                        upstream_path_obj = Path(self.upstream_path)
-                        if upstream_path_obj.name == 'install':
-                            upstream_env_path = upstream_path_obj.parent
-                        else:
-                            upstream_env_path = upstream_path_obj
-                        
-                        upstream_hashes = self.spack_manager.get_upstream_package_hashes(upstream_env_path, package_name)
-                        if upstream_hashes:
-                            # Show hash selection menu
-                            hash_options = ["(Skip - don't lock to specific upstream spec)"]
-                            hash_options.extend([f"{h['hash']} - {h['spec']}" for h in upstream_hashes])
-                            
-                            menu = TUIMenu(self.stdscr, f"Select upstream spec to lock for {package_name}")
-                            help_text = "Select a specific upstream spec to lock, or skip to use any available version."
-                            selected_idx = menu.display_menu(hash_options, help_text=help_text)
-                            
-                            if selected_idx is None:
-                                # User cancelled
-                                continue
-                            elif selected_idx > 0:
-                                # User selected a hash (indices are 1-based because of skip option)
-                                fields["upstream_hash"] = upstream_hashes[selected_idx - 1]["hash"]
-                except Exception as e:
-                    # If upstream query fails, just continue without hash selection
-                    # Silently ignore to not break package selection
-                    pass
                 
                 curses.curs_set(0)  # Hide cursor
                 return fields
