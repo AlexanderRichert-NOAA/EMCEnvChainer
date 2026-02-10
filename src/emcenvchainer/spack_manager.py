@@ -648,12 +648,18 @@ class SpackManager:
                 package_key = f"{package_name}:"
                 base_key = package_name
                 
-                # Check if this package has externals configuration (skip if it does)
-                existing_config = spack_section['packages'].get(package_key) or spack_section['packages'].get(base_key)
-                if existing_config and 'externals' in existing_config:
-                    # Don't override external package configurations
-                    if self.logger:
-                        self.logger.info(f"Skipping variant/compiler flag overrides for external package: {package_name}")
+                # Check all possible keys for external configuration
+                is_external = False
+                for key in [package_key, base_key]:
+                    if key in spack_section['packages']:
+                        pkg_config = spack_section['packages'][key]
+                        if isinstance(pkg_config, dict) and 'externals' in pkg_config:
+                            is_external = True
+                            if self.logger:
+                                self.logger.info(f"Skipping variant/compiler flag overrides for external package: {package_name} (found externals in key '{key}')")
+                            break
+                
+                if is_external:
                     continue
                 
                 # If base_key exists but package_key doesn't, move to colon version

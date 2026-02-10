@@ -3432,3 +3432,49 @@ netcdf-c:VERSION:4.8.1:VARIANTS:+mpi:FLAGS:
         # Original buildable setting should be preserved
         assert cfg["spack"]["packages"]["cmake"]["buildable"] is False
 
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_get_upstream_package_info')
+    def test_create_spack_yaml_skips_external_packages_with_colon(self, mock_get_info, mock_run_cmd, spack_manager, tmp_path):
+        """Test that external packages with colon keys don't get overrides."""
+        mock_get_info.return_value = {
+            "openmpi": {
+                "version": "4.1.1",
+                "variants": "+shared",
+                "compiler_flags": 'cflags="-O2"'
+            }
+        }
+        
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        yaml_path = upstream / "spack.yaml"
+        # openmpi configured as external with colon
+        yaml_path.write_text("""spack:
+  specs: []
+  packages:
+    openmpi:
+      externals:
+      - spec: openmpi@4.1.1
+        prefix: /opt/openmpi
+      buildable: false
+""")
+        
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+        
+        class DummyPlatform:
+            config = {}
+        
+        result_yaml = spack_manager._create_spack_yaml(str(upstream), [], new_env, [], DummyPlatform())
+        
+        yaml = YAML(typ="safe")
+        cfg = yaml.load(result_yaml)
+        
+        # Should have openmpi: (with colon) since we check for externals
+        assert "openmpi:" in cfg["spack"]["packages"]
+        assert "externals" in cfg["spack"]["packages"]["openmpi:"]
+        
+        # Should NOT have added overrides
+        assert "require" not in cfg["spack"]["packages"]["openmpi:"]
+        assert "variants" not in cfg["spack"]["packages"]["openmpi:"]
+        assert "version" not in cfg["spack"]["packages"]["openmpi:"]
+
