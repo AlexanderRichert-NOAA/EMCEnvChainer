@@ -2309,7 +2309,7 @@ class TestEmcEnvChainerTUI:
             tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
         
         # Verify RadioButtonMenu was created with correct title
-        mock_radio_class.assert_called_once_with(mock_stdscr, "Select packages to update/modify in environment")
+        mock_radio_class.assert_called_once_with(mock_stdscr, "Select packages to update, modify, or lock from upstream")
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, tui_app, mock_stdscr):

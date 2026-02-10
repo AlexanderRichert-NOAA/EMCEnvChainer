@@ -105,6 +105,23 @@ class TestSpackManager:
         result = spack_manager._build_spec_string(pkg)
         assert result == expected_spec
     
+    def test_build_spec_string_with_upstream_hash(self, spack_manager):
+        """Test _build_spec_string includes upstream hash when present."""
+        pkg = {"name": "cmake", "version": "3.20.0", "upstream_hash": "abc1234"}
+        result = spack_manager._build_spec_string(pkg)
+        assert result == "cmake@=3.20.0 /abc1234"
+    
+    def test_build_spec_string_with_hash_and_variants(self, spack_manager):
+        """Test _build_spec_string with both variants and upstream hash."""
+        pkg = {
+            "name": "cmake",
+            "version": "3.20.0",
+            "variants": "+shared +ssl",
+            "upstream_hash": "xyz9876"
+        }
+        result = spack_manager._build_spec_string(pkg)
+        assert result == "cmake@=3.20.0+shared +ssl /xyz9876"
+    
     def test_add_pending_recipe_new_package(self, spack_manager):
         """Test adding a pending recipe for a new package."""
         spack_manager.add_pending_recipe("test-pkg", "1.0.0", needs_manual_edit=True)
@@ -3480,3 +3497,62 @@ cmake:VERSION:3.20.0:VARIANTS:+shared:FLAGS::EXTERNAL:True
         # hdf5 should have been added
         assert "hdf5:" in cfg["spack"]["packages"]
 
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_upstream_package_hashes(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_upstream_package_hashes retrieves hashes and specs correctly."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock spack find output - spack find filters by package name, so only hdf5 results
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """abc1234:SPEC:hdf5@1.10.7+mpi
+xyz9876:SPEC:hdf5@1.10.6~mpi"""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_upstream_package_hashes("hdf5", str(upstream))
+        
+        # Should return list of dicts with hash and spec
+        assert len(result) == 2
+        assert result[0] == {"hash": "abc1234", "spec": "hdf5@1.10.7+mpi"}
+        assert result[1] == {"hash": "xyz9876", "spec": "hdf5@1.10.6~mpi"}
+        
+        # Verify correct spack command was called
+        mock_run_cmd.assert_called_once()
+        call_args = mock_run_cmd.call_args[0][0]
+        assert "find" in call_args
+        assert "{hash:7}:SPEC:{name}{@version}{variants}" in call_args
+        assert "hdf5" in call_args
+    
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_upstream_package_hashes_no_matches(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_upstream_package_hashes returns empty list when no matches found."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock empty output
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_upstream_package_hashes("nonexistent-pkg", str(upstream))
+        
+        assert result == []
+    
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_upstream_package_hashes_uses_provided_upstream_path(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_upstream_package_hashes uses provided upstream path instead of config."""
+        custom_upstream = tmp_path / "custom_upstream"
+        custom_upstream.mkdir()
+        
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "abc1234:SPEC:pkg@1.0.0"
+        mock_run_cmd.return_value = mock_result
+        
+        spack_manager.get_upstream_package_hashes("pkg", str(custom_upstream))
+        
+        # Verify the custom path was passed to spack find
+        call_args = mock_run_cmd.call_args[0][0]
+        assert str(custom_upstream) in " ".join(call_args)

@@ -277,15 +277,11 @@ class PackageSpecDialog:
                 
                 # Check if validation has already been performed for this dialog session
                 if validation_performed:
-                    # Validation already done, proceed without validation screen
-                    curses.curs_set(0)  # Hide cursor
-                    return fields
-                
-                # First check if version exists locally
-                if self.spack_manager.check_package_version_exists(package_name, version) or not version:
-                    # Version exists or isn't set; proceed without validation screen
-                    curses.curs_set(0)  # Hide cursor
-                    return fields
+                    # Validation already done, proceed to hash selection
+                    pass
+                elif self.spack_manager.check_package_version_exists(package_name, version) or not version:
+                    # Version exists or isn't set; proceed to hash selection
+                    pass
                 else:
                     # Version doesn't exist, show validation screen
                     if not self._validate_and_add_version(package_name, version):
@@ -294,8 +290,28 @@ class PackageSpecDialog:
                         # Version validation succeeded, mark as validated
                         validation_performed = True
                         last_validated_spec = current_spec
-                        curses.curs_set(0)  # Hide cursor
-                        return fields
+                
+                # Query for upstream package hashes
+                try:
+                    upstream_hashes = self.spack_manager.get_upstream_package_hashes(package_name)
+                    if upstream_hashes:
+                        # Show hash selection menu
+                        hash_options = ["(Skip - don't lock to specific upstream spec)"]
+                        hash_options.extend([f"{h['hash']} - {h['spec']}" for h in upstream_hashes])
+                        
+                        menu = TUIMenu(self.stdscr, f"Select upstream spec to lock for {package_name}")
+                        help_text = "Select a specific upstream spec to lock, or skip to use any available version."
+                        selected_idx = menu.display_menu(hash_options, help_text=help_text)
+                        
+                        if selected_idx is None:
+                            # User cancelled
+                            continue
+                        elif selected_idx > 0:
+                            # User selected a hash (indices are 1-based because of skip option)
+                            fields["upstream_hash"] = upstream_hashes[selected_idx - 1]["hash"]
+                except Exception:
+                    # If upstream query fails, just continue without hash selection
+                    pass
                 
                 curses.curs_set(0)  # Hide cursor
                 return fields
@@ -1349,7 +1365,7 @@ class EmcEnvChainerTUI:
             options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
         
         # Show radio button selection menu
-        radio_menu = RadioButtonMenu(stdscr, "Select packages to update/modify in environment")
+        radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
         selected_indices = radio_menu.display_menu(options)
         
         if selected_indices is None:

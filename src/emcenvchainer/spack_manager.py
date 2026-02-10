@@ -700,7 +700,7 @@ class SpackManager:
         """Build Spack spec string from package dictionary.
         
         Args:
-            pkg: Package dictionary with name, version, variants
+            pkg: Package dictionary with name, version, variants, and optionally upstream_hash
             
         Returns:
             Spack spec string
@@ -716,6 +716,10 @@ class SpackManager:
                 spec += f" {variants}"
             elif variants:
                 spec += variants
+        
+        # Add upstream hash if selected (7-character hash)
+        if pkg.get("upstream_hash"):
+            spec += f" /{pkg['upstream_hash']}"
         
         return spec
     
@@ -1546,3 +1550,39 @@ class SpackManager:
                 self.logger.warning(f"Could not retrieve package info from upstream: {e}")
  
         return package_info
+
+    def get_upstream_package_hashes(self, upstream_env_path: Path, package_name: str) -> List[Dict[str, str]]:
+        """Get available concrete spec hashes for a package from upstream environment.
+        
+        Args:
+            upstream_env_path: Path to upstream environment directory
+            package_name: Name of the package to query
+            
+        Returns:
+            List of dictionaries with 'hash' (7 chars) and 'spec' (full spec string) keys
+        """
+        hashes = []
+        
+        try:
+            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
+            result = self._run_spack_command([
+                '-e', str(upstream_env_path),
+                'find',
+                '--format', '{hash:7}:SPEC:{name}{@version}{variants}',
+                package_name
+            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+            
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.strip().split('\n'):
+                    if ':SPEC:' in line:
+                        hash_part, spec_part = line.split(':SPEC:', 1)
+                        hashes.append({
+                            'hash': hash_part.strip(),
+                            'spec': spec_part.strip()
+                        })
+                        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Could not retrieve hashes for {package_name}: {e}")
+        
+        return hashes
