@@ -1617,6 +1617,10 @@ class EmcEnvChainerTUI:
                 if packages_needing_edit:
                     self._handle_manual_recipe_editing(stdscr, spack_manager, packages_needing_edit)
             
+            # Generate activate script (doesn't require concretization)
+            menu.display_info("Generating activation script...", wait_for_key=False)
+            self._generate_activate_script(env_path, upstream_path)
+            
             # Concretize
             with open(os.path.join(env_path, "spack.yaml"), "r") as f:
                 spack_yaml = f.read()
@@ -1636,6 +1640,10 @@ class EmcEnvChainerTUI:
             # Show concretization output
             self.display_scrollable_text(stdscr, ["Proceed with build?", "'spack concretize' output below", " > '[^]': existing package from upstream installation", " > ' - ': package to be built"], concretize_output)
 
+            # Generate package versions script (after concretization, before installation)
+            menu.display_info("Generating package versions script...", wait_for_key=False)
+            self._generate_package_versions_script(spack_manager, env_path)
+
             # Install packages
             install_success = self.run_interactive_install(stdscr, spack_manager, env_path)
             
@@ -1646,10 +1654,6 @@ class EmcEnvChainerTUI:
             # Refresh modules
             menu.display_info("Refreshing modules...", wait_for_key=False)
             modulefiles_path = spack_manager.refresh_modules(env_path)
-            
-            # Generate activation scripts
-            menu.display_info("Generating activation scripts...", wait_for_key=False)
-            self._generate_activation_scripts(stdscr, spack_manager, env_path, upstream_path)
             
             # Final success message
             success_msg = f"Environment created successfully!\n"
@@ -1957,7 +1961,7 @@ echo "using spack-stack installation at {spack_stack_path}"
         
         try:
             # Run spack find to get package versions using SpackManager
-            args = ['-e', env_path, 'find', '--format', 'export {name}_ver={version}']
+            args = ['-e', env_path, 'find', '--show-concretized', '--format', 'export {name}_ver={version}']
             result = spack_manager._run_spack_command(args)
             
             if result.returncode == 0:
