@@ -296,7 +296,15 @@ class PackageSpecDialog:
                 # Query for upstream package hashes
                 try:
                     if self.spack_manager and self.upstream_path:
-                        upstream_hashes = self.spack_manager.get_upstream_package_hashes(self.upstream_path, package_name)
+                        # Convert install path to env path if needed
+                        from pathlib import Path
+                        upstream_path_obj = Path(self.upstream_path)
+                        if upstream_path_obj.name == 'install':
+                            upstream_env_path = upstream_path_obj.parent
+                        else:
+                            upstream_env_path = upstream_path_obj
+                        
+                        upstream_hashes = self.spack_manager.get_upstream_package_hashes(upstream_env_path, package_name)
                         if upstream_hashes:
                             # Show hash selection menu
                             hash_options = ["(Skip - don't lock to specific upstream spec)"]
