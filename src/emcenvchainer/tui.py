@@ -1960,32 +1960,45 @@ echo "using spack-stack installation at {spack_stack_path}"
         env_name = os.path.basename(env_path)
         
         try:
+            import re
+            
             # Run spack find to get package versions using SpackManager
             args = ['-e', env_path, 'find', '--show-concretized', '--format', 'export {name}_ver={version}']
             result = spack_manager._run_spack_command(args)
             
-            if result.returncode == 0:
+            if result.returncode == 0 and result.stdout.strip():
                 # Process the output to replace hyphens with underscores before the equal sign
                 lines = result.stdout.strip().split('\n')
                 processed_lines = []
                 
                 for line in lines:
-                    if '=' in line and line.startswith('export '):
-                        # Split at the equal sign
-                        before_eq, after_eq = line.split('=', 1)
-                        # Replace hyphens with underscores in the part before the equal sign
-                        before_eq = before_eq.replace('-', '_')
-                        processed_line = f"{before_eq}={after_eq}"
-                        processed_lines.append(processed_line)
+                    if re.match("\ +export=", line):
+                        # Match and split at the equal sign
+                        match = re.match(r'(export\s+[^=]+)(=.*)$', stripped_line)
+                        if match:
+                            # Replace hyphens with underscores only in the part before the equal sign
+                            before_eq = match.group(1).replace('-', '_')
+                            after_eq = match.group(2)
+                            processed_line = f"{before_eq}{after_eq}"
+                            processed_lines.append(processed_line)
                 
                 export_content = '\n'.join(processed_lines)
             else:
                 # Fallback if spack find fails
-                export_content = "# Failed to generate package versions automatically"
+                error_info = f"Return code: {result.returncode}"
+                if result.stderr:
+                    error_info += f"\nStderr: {result.stderr}"
+                if result.stdout:
+                    error_info += f"\nStdout: {result.stdout}"
+                export_content = f"# Failed to generate package versions automatically\n# {error_info}"
+                if spack_manager.logger:
+                    spack_manager.logger.warning(f"Failed to generate package versions: {error_info}")
                 
         except Exception as e:
             # Fallback content if command fails
             export_content = f"# Failed to generate package versions: {e}"
+            if spack_manager.logger:
+                spack_manager.logger.error(f"Exception generating package versions: {e}")
         
         script_content = f"""#!/bin/bash
 # The script exports version variables for all packages in the Spack environment in this directory ({env_name})
