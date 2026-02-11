@@ -1975,8 +1975,8 @@ echo "using spack-stack installation at {spack_stack_path}"
                     match = re.match(r'^(.*?)(export[^=]+)(=.*)$', line)
                     if match:
                         # Replace hyphens with underscores only in the part before the equal sign
-                        before_eq = match.group(1).replace('-', '_')
-                        after_eq = match.group(2)
+                        before_eq = match.group(2).replace('-', '_')
+                        after_eq = match.group(3)
                         processed_line = f"{before_eq}{after_eq}"
                         processed_lines.append(processed_line)
                 
