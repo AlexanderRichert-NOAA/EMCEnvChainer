@@ -28,7 +28,7 @@ SITE_OVERRIDE=ursa emcenvchainer
 
 ## Add'l usage & troubleshooting
 
-### *Spack won't use the existing packages*
+### *Spack won't use some of the existing packages*
 
 Occasionally Spack will not use existing packages from the upstream environment even when it ostensibly should. For instance, the concretization output may show that it intends to perform a fresh build of HDF5 and its dependents even though we are only requesting a new version of Scotch, which is not in any way a dependency of HDF5. There are deep internal Spack reasons for this, usually related to spuriously differing package hashes.
 
