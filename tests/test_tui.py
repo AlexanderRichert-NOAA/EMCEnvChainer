@@ -3253,7 +3253,7 @@ class TestEmcEnvChainerTUI:
         mock_spack_manager = Mock()
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_result.stdout = "export netcdf-c_ver=4.9.0\nexport hdf5_ver=1.14.0\n"
+        mock_result.stdout = "export netcdf_c_ver=4.9.0\nexport hdf5_ver=1.14.0\n"
         mock_spack_manager._run_spack_command.return_value = mock_result
         
         tui_app._generate_package_versions_script(mock_spack_manager, "/test/env/path")
@@ -3326,8 +3326,9 @@ class TestEmcEnvChainerTUI:
         mock_spack_manager = Mock()
         mock_result = Mock()
         mock_result.returncode = 0
-        # Spack output with hyphens in package names
-        mock_result.stdout = "export netcdf-c_ver=4.9.0\nexport parallel-netcdf_ver=1.12.0\n"
+        # Spack output with hyphens in package names and concretization markers
+        # Real output from "spack find --show-concretized" has spaces/markers before "export"
+        mock_result.stdout = "[^] export netcdf_c_ver=4.9.0\n - export parallel_netcdf_ver=1.12.0\n"
         mock_spack_manager._run_spack_command.return_value = mock_result
         
         tui_app._generate_package_versions_script(mock_spack_manager, "/test/env/path")
@@ -3337,7 +3338,7 @@ class TestEmcEnvChainerTUI:
         written_content = mock_file.write.call_args[0][0]
         
         # Hyphens should be replaced with underscores in variable names
-        assert "netcdf_c_ver" in written_content or "netcdf-c_ver" in written_content
+        assert "netcdf_c_ver" in written_content
     
     @patch('emcenvchainer.tui.TUIMenu')
     @patch('emcenvchainer.tui.PackageSpecDialog')

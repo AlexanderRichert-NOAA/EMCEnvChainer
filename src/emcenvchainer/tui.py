@@ -1972,15 +1972,13 @@ echo "using spack-stack installation at {spack_stack_path}"
                 processed_lines = []
                 
                 for line in lines:
-                    if re.match("\s+export=", line):
-                        # Match and split at the equal sign
-                        match = re.match(r'(export\s+[^=]+)(=.*)$', stripped_line)
-                        if match:
-                            # Replace hyphens with underscores only in the part before the equal sign
-                            before_eq = match.group(1).replace('-', '_')
-                            after_eq = match.group(2)
-                            processed_line = f"{before_eq}{after_eq}"
-                            processed_lines.append(processed_line)
+                    match = re.match(r'^(.*?)(export[^=]+)(=.*)$', line)
+                    if match:
+                        # Replace hyphens with underscores only in the part before the equal sign
+                        before_eq = match.group(1).replace('-', '_')
+                        after_eq = match.group(2)
+                        processed_line = f"{before_eq}{after_eq}"
+                        processed_lines.append(processed_line)
                 
                 export_content = '\n'.join(processed_lines)
             else:
