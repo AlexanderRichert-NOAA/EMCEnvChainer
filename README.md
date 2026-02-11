@@ -2,26 +2,77 @@
 
 ![unit tests](https://github.com/AlexanderRichert-NOAA/EMCEnvChainer/actions/workflows/unit-tests.yml/badge.svg)
 
-The EMCEnvChainer utility allows NOAA developers to build their own copies of packages (i.e., model app dependencies) on top of existing spack-stack installations. It does so using Spack's environment chaining feature. Only the specifically requested package(s) and corresponding dependents need to be rebuilt, therefore as much of the existing installation as possible is reused, thereby reducing overall installation time and minimizing configuration differences (versions, build options) between the base and user software stacks.
+The EMCEnvChainer utility allows NOAA developers to build their own copies of packages (i.e., model app dependencies) on top of existing spack-stack installations. It does so using Spack's environment chaining feature. Only the specifically requested package(s) and corresponding dependents need to be rebuilt, therefore as much of the existing installation as possible is reused, thereby reducing overall installation time and minimizing configuration differences (versions, build options) between the base (upstream) and user-built software stacks.
 
 The utility will automatically identify which platform (RDHPCS systems + Acorn) it is running on, and identify available base spack-stack installations, including the ones associated with the UFS Weather Model head of develop.
 
-## Installation & usage
+## Installation & basic usage
 
 To use the utility, install it, invoke the `emcenvchainer` command, and follow the prompts:
 ```console
 pip3 install emcenvchainer
 emcenvchainer
 ```
-After the installation is complete, instructions are provided for accessing the hybrid (base+user) stack. In short, Lmod module files and spack-stack metamodules for accessing the base and user packages are installed in a single location in the user's space (i.e., `$MODULEPATH` should not include the original spack-stack installation, only the one associated with the user's newly built spack-stack environment).
+You may choose a spack-stack installation and select individual packages to incorporate into your installation, or you may choose a model application to automatically obtain the list of dependencies, then choose whether to customize the version/build options for each. Currently only UFS Weather Model (head of develop) is supported. After the installation is complete, instructions are provided for accessing the stack.
 
 > [!NOTE]
-> This utility relies on Spack's built-in environment chaining capabilities. The ability to chain environments with Spack/spack-stack in some circumstances depends on using the same Python version/installation as the one that generated the main spack-stack installation. The Python versions/installations used to install each spack-stack environment on each platform are not particularly well documented or necessarily consistent. If you find in the concretization output that Spack does not reuse existing packages from the base installation in cases where it should (`[^]` in the concretization output indicates successful reuse of a package from the upstream/base installation), please reach out to the spack-stack maintainers for your HPC platform (typically EPIC; see https://spack-stack.readthedocs.io/en/latest/PreConfiguredSites.html) or create a spack-stack issue: https://github.com/JCSDA/spack-stack/issues/new/choose.
+> **The Lmod module files and spack-stack metamodules for accessing the base and user packages are installed in a single location** in the user's space. Therefore, when setting `$MODULEPATH` for your application, it should *not* include the original spack-stack installation, only the one associated with the newly built Spack environment.
 
-To override the automatic platform detection, export the SITE_OVERRIDE environment variable:
+To override the automatic platform detection, export the `$SITE_OVERRIDE` environment variable:
 ```console
 SITE_OVERRIDE=ursa emcenvchainer
 ```
 
 > [!IMPORTANT]
-> xterm support must be enabled (such as for PuTTY, Tectia/sshg3, SecureCRT) or the utility will immediately fail with an error.
+> Compatibility for xterm must be enabled in your terminal (PuTTY, Tectia/sshg3, SecureCRT) or the utility will immediately fail with an error.
+
+## Add'l usage & troubleshooting
+
+### *Spack won't use the existing packages*
+
+Occasionally Spack will not use existing packages from the upstream environment even when it ostensibly should. For instance, the concretization output may show that it intends to perform a fresh build of HDF5 and its dependents even though we are only requesting a new version of Scotch, which is not in any way a dependency of HDF5. There are deep internal Spack reasons for this, usually related to spuriously differing package hashes.
+
+This problem can be straightforwardly worked around if you are using the model app-based approach to configuring your installation (i.e., selecting a model-based configuration on the "Select Installation Source" screen). In that case, identify any such problematic packages that should not be rebuilt (HDF5, in the aforementioned example), select them from the checklist, and at the bottom of the "Package Specification" screen, select one of the existing package configurations. There is little risk to doing this to any and all packages, as long as they are not packages that need building, i.e., package versions you have requested or dependents of packages you have selected (i.e., if you wish to build a new HDF5 version, you cannot reuse the existing NetCDF packages because they depend on HDF5). The only case where this will certainly fail is if it leads to version conflicts. If the versions and build options are otherwise acceptable, you may of course choose to allow Spack to rebuild even some packages that do not need rebuilding.
+
+If you are selecting individual packages for inclusion from the upstream environment (i.e., you selected a spack-stack environment directly on the "Select Installation Source" screen), then when you add a package that you do not wish to rebuild, add "/hash123" to the "Variants" field on the "Package Specification" screen, where you have determined the package hash "/hash123" in the base (upstream) spack-stack installation.
+
+### *I want to modify the Spack environment before installing*
+
+The utility can be halted at any time using Ctrl-c. At any time after the Spack environment configuration has been written (spack.yaml+various other files), you may stop the utility, activate the environment by sourcing `activate_spack_env.sh`, and modify the environment before running `spack install`. For example, to add a new package constraint:
+```console
+$ cd <Spack env directory>
+$ . activate_spack_env.sh
+$ spack config add 'packages:hdf5:require:+szip' # or manually edit config files
+$ spack concretize
+$ spack install
+```
+
+### *I want to install additional packages*
+
+At any point after the Spack environment configuration (spack.yaml+various other files) has been written, you may modify the environment, including to add more packages. The simplest approach is to add new packages after the initial installation is complete. For example, if you have already run an installation based on the UFS Weather Model dependencies, the following steps can be used to add the MET and METplus packages:
+```console
+$ cd <Spack env directory>
+$ . activate_spack_env.sh
+$ spack install --add met metplus
+# if modules have not already been automatically generated:
+$ spack module lmod refresh
+```
+
+### *I'm getting angry emails from sys admins for running large builds on login nodes*
+
+This utility does not currently support building under batch schedulers (SLURM, PBS Pro, etc.). To avoid angry emails, such as on the MSU systems (Orion & Hercules):
+ - On a login node: Run the utility until after the concretization step but before initiating the installation itself (i.e., Ctrl-c when the concretization output is displayed).
+ - On a login node: Activate the Spack environment (`. activate_spack_env.sh`) and run `spack fetch --missing` to retrieve source code for the packages to be built.
+ - On a compute node: Run `spack install`. This can be done with a batch script, or interactively.
+To run interactively, first source `activate_spack_env.sh`. With SLURM (RDHPCS machines):
+```console
+srun --account=myacctname --partition=dev --time=01:00:00 --nodes=1 --cpus-per-task=6 --pty --export=ALL $(which spack) install -p1 -j6
+```
+With PBS Pro (Acorn):
+```console
+qsub -A MYACCT-DEV -q dev -l walltime=01:00:00,select=1:ncpus=6 -I -V -- $(which spack) install -p1 -j6
+```
+
+### *I want to make my own source code modifications to one or more packages*
+
+This functionality is not directly available with this utility. To achieve this effect, follow the above instructions under "I want to modify the Spack environment before installing" (i.e., halt the utility after spack.yaml is generated but prior to concretization), and modify the environment by running `spack develop mypkg@develop`, then run the concretization and installation steps as shown. See also the [Spack documentation](https://spack-tutorial.readthedocs.io/en/latest/tutorial_developer_workflows.html#development-iteration-cycles) for details on pointing Spack to a local, modified copy of a package's source code.
