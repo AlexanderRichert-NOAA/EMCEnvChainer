@@ -61,10 +61,10 @@ $ spack module lmod refresh
 ### *I'm getting angry emails from sys admins for running large builds on login nodes*
 
 This utility does not currently support building under batch schedulers (SLURM, PBS Pro, etc.). To avoid angry emails, such as on the MSU systems (Orion & Hercules):
- - On a login node: Run the utility until after the concretization step but before initiating the installation itself (i.e., Ctrl-c when the concretization output is displayed).
- - On a login node: Activate the Spack environment (`. activate_spack_env.sh`) and run `spack fetch --missing` to retrieve source code for the packages to be built.
- - On a compute node: Run `spack install`. This can be done with a batch script, or interactively.
-To run interactively, first source `activate_spack_env.sh`. With SLURM (RDHPCS machines):
+ 1. On a login node: Run the utility until after the concretization step but before initiating the installation itself (i.e., Ctrl-c when the concretization output is displayed).
+ 2. On a login node: Activate the Spack environment (`. activate_spack_env.sh`) and run `spack fetch --missing` to retrieve source code for the packages to be built.
+ 3. On a compute node: Run `spack install`. To run via interactive job on a compute node, first source `activate_spack_env.sh`.
+With SLURM (RDHPCS machines):
 ```console
 srun --account=myacctname --partition=dev --time=01:00:00 --nodes=1 --cpus-per-task=6 --pty --export=ALL $(which spack) install -p1 -j6
 ```
