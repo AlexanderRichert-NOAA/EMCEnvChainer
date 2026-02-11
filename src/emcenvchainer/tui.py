@@ -1972,7 +1972,7 @@ echo "using spack-stack installation at {spack_stack_path}"
                 processed_lines = []
                 
                 for line in lines:
-                    if re.match("\ +export=", line):
+                    if re.match("\s+export=", line):
                         # Match and split at the equal sign
                         match = re.match(r'(export\s+[^=]+)(=.*)$', stripped_line)
                         if match:
