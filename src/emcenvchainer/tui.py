@@ -810,7 +810,14 @@ class RadioButtonMenu:
         self.top_row = 0
         self.selected_items = set()
     
-    def display_menu(self, options: List[str], selected_row: int = 0) -> Optional[set]:
+    def display_menu(
+        self,
+        options: List[str],
+        selected_row: int = 0,
+        extra_instructions: Optional[List[str]] = None,
+        key_actions: Optional[Dict[int, Any]] = None,
+        status_lines: Optional[List[str]] = None,
+    ) -> Optional[set]:
         """Display menu with radio button selection.
         
         Args:
@@ -857,6 +864,14 @@ class RadioButtonMenu:
                 "'a' to select all, 'n' to select none",
                 "Enter to continue with selected packages, Ctrl+C to quit"
             ]
+
+            if extra_instructions:
+                instructions.extend(extra_instructions)
+
+            if status_lines:
+                status_start_y = max(4, height - len(instructions) - len(status_lines) - 2)
+                for i, status in enumerate(status_lines):
+                    self.stdscr.addstr(status_start_y + i, 2, status[: max(0, width - 4)])
             
             start_y = height - len(instructions) - 1
             for i, instruction in enumerate(instructions):
@@ -892,6 +907,8 @@ class RadioButtonMenu:
                 self.selected_items.clear()
             elif key in [curses.KEY_ENTER, ord('\n'), ord('\r')]:
                 return self.selected_items
+            elif key_actions and key in key_actions:
+                key_actions[key]()
             elif key in [27]:  # Escape
                 return None
 
@@ -1448,9 +1465,24 @@ class EmcEnvChainerTUI:
             return None
         
         # Use radio button selection for packages
-        return self._select_packages_with_radio_buttons(stdscr, all_packages, selected_app, spack_manager, upstream_path)
+        return self._select_packages_with_radio_buttons(
+            stdscr,
+            all_packages,
+            selected_app,
+            spack_manager,
+            upstream_path,
+            allow_additional_packages=True,
+        )
     
-    def _select_packages_with_radio_buttons(self, stdscr, all_packages: List[Dict], selected_app, spack_manager: SpackManager, upstream_path: str = None) -> Optional[List[Dict]]:
+    def _select_packages_with_radio_buttons(
+        self,
+        stdscr,
+        all_packages: List[Dict],
+        selected_app,
+        spack_manager: SpackManager,
+        upstream_path: str = None,
+        allow_additional_packages: bool = False,
+    ) -> Optional[List[Dict]]:
         """Select packages using radio button interface.
         
         Args:
@@ -1464,6 +1496,7 @@ class EmcEnvChainerTUI:
         """
         # Create display options for radio button menu
         options = []
+        display_packages = []
         for pkg in all_packages:
             # Skip ufs_common, cmake, and spack-stack metamodules (stack-*)
             if pkg["name"] in ["ufs_common", "cmake"] or pkg["name"].startswith("stack-"):
@@ -1471,15 +1504,51 @@ class EmcEnvChainerTUI:
                 
             pkg_type = "📦"
             options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
+            display_packages.append({"kind": "base", "pkg": pkg})
+
+        radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
+
+        additional_packages: List[Dict] = []
+        extra_instructions: List[str] = []
+        key_actions: Dict[int, Any] = {}
+
+        if allow_additional_packages:
+            dialog = PackageSpecDialog(stdscr, spack_manager, upstream_path)
+
+            def _add_package():
+                pkg_spec = dialog.get_package_spec()
+                if pkg_spec:
+                    additional_packages.append(pkg_spec)
+                    pkg_label = pkg_spec["name"]
+                    if pkg_spec.get("version"):
+                        pkg_label += f"@{pkg_spec['version']}"
+                    if pkg_spec.get("variants"):
+                        pkg_label += f" {pkg_spec['variants']}"
+                    options.append(f"📦 {pkg_label} (additional)")
+                    display_packages.append({"kind": "additional", "pkg": pkg_spec})
+                    radio_menu.selected_items.add(len(options) - 1)
+
+            extra_instructions = [
+                "'+' to add a package",
+            ]
+            key_actions = {
+                ord('+'): _add_package,
+            }
         
         # Show radio button selection menu
-        radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
-        selected_indices = radio_menu.display_menu(options)
+        selected_indices = radio_menu.display_menu(
+            options,
+            extra_instructions=extra_instructions,
+            key_actions=key_actions,
+        )
         
         if selected_indices is None:
             return None
         
         if not selected_indices:
+            if additional_packages:
+                return additional_packages
+
             menu = TUIMenu(stdscr, "No Packages Selected")
             menu.display_info("No packages were selected. The environment will be created without additional packages.")
             return []
@@ -1487,14 +1556,27 @@ class EmcEnvChainerTUI:
         # Get detailed specifications for selected packages
         selected_packages = []
         for idx in selected_indices:
-            pkg = all_packages[idx]
-            
-            # Get package specification with version and variants
-            spec = self._get_package_specification(stdscr, pkg, spack_manager, upstream_path)
-            if spec:
-                selected_packages.append(spec)
-        
-        selected_packages.extend([pkg for idx, pkg in enumerate(all_packages) if idx not in selected_indices])
+            if idx >= len(display_packages):
+                continue
+            entry = display_packages[idx]
+            pkg = entry["pkg"]
+
+            if entry["kind"] == "additional":
+                selected_packages.append(pkg)
+            else:
+                # Get package specification with version and variants
+                spec = self._get_package_specification(stdscr, pkg, spack_manager, upstream_path)
+                if spec:
+                    selected_packages.append(spec)
+
+        # Preserve existing behavior: unselected base packages are still included unchanged.
+        selected_packages.extend(
+            [
+                entry["pkg"]
+                for idx, entry in enumerate(display_packages)
+                if entry["kind"] == "base" and idx not in selected_indices
+            ]
+        )
 
         return selected_packages if selected_packages else None
     

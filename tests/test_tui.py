@@ -2060,6 +2060,7 @@ class TestEmcEnvChainerTUI:
             assert isinstance(args[1], list)  # all_packages
             assert args[2] == mock_app  # selected_app
             assert args[3] == mock_spack_manager  # spack_manager
+            assert mock_radio.call_args[1]["allow_additional_packages"] is True
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_success(self, mock_radio_class, tui_app, mock_stdscr):
@@ -2335,6 +2336,82 @@ class TestEmcEnvChainerTUI:
         options = mock_radio.display_menu.call_args[0][0]
         assert len(options) == 0
         assert result == []
+
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_additional_packages_only(self, mock_radio_class, mock_dialog_class, tui_app, mock_stdscr):
+        """Test selecting no model packages but adding additional packages inline."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        mock_dialog.get_package_spec.return_value = {"name": "ecbuild", "version": "3.8.0"}
+
+        def _display_menu_with_add(options, **kwargs):
+            kwargs["key_actions"][ord('+')]()
+            return [len(options) - 1]  # Select added additional-package row
+
+        mock_radio.display_menu.side_effect = _display_menu_with_add
+
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"}
+        ]
+
+        result = tui_app._select_packages_with_radio_buttons(
+            mock_stdscr,
+            all_packages,
+            mock_app,
+            mock_spack_manager,
+            allow_additional_packages=True,
+        )
+
+        assert result is not None
+        assert result[0] == {"name": "ecbuild", "version": "3.8.0"}
+        assert any(pkg.get("name") == "netcdf-c" for pkg in result)
+
+    @patch('emcenvchainer.tui.PackageSpecDialog')
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_appends_additional_packages(self, mock_radio_class, mock_dialog_class, tui_app, mock_stdscr):
+        """Test additional packages are appended to selected model app packages."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_dialog = Mock()
+        mock_dialog_class.return_value = mock_dialog
+        mock_dialog.get_package_spec.return_value = {"name": "ecbuild", "version": "3.8.0"}
+
+        def _display_menu_with_add(options, **kwargs):
+            kwargs["key_actions"][ord('+')]()
+            return [0, len(options) - 1]
+
+        mock_radio.display_menu.side_effect = _display_menu_with_add
+
+        mock_spack_manager = Mock()
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        selected_spec = {"name": "netcdf-c", "version": "4.9.0"}
+
+        with patch.object(tui_app, '_get_package_specification', return_value=selected_spec):
+            result = tui_app._select_packages_with_radio_buttons(
+                mock_stdscr,
+                all_packages,
+                mock_app,
+                mock_spack_manager,
+                allow_additional_packages=True,
+            )
+
+        assert result is not None
+        assert result[0]["name"] == "netcdf-c"
+        assert any(pkg.get("name") == "ecbuild" for pkg in result)
     
     @patch('emcenvchainer.tui.PackageSpecDialog')
     def test_get_package_specification_success(self, mock_dialog_class, tui_app, mock_stdscr):
