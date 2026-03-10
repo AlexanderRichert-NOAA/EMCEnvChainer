@@ -1906,7 +1906,7 @@ class TestEmcEnvChainerTUI:
         
         # Capture what gets passed to _select_packages_with_radio_buttons
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None, allow_additional_packages=False):
             nonlocal captured_packages
             captured_packages = packages
             return []
@@ -1957,7 +1957,7 @@ class TestEmcEnvChainerTUI:
         }
         
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None, allow_additional_packages=False):
             nonlocal captured_packages
             captured_packages = packages
             return []
@@ -1991,7 +1991,7 @@ class TestEmcEnvChainerTUI:
         }
         
         captured_packages = None
-        def capture_packages(stdscr, packages, app, manager, upstream_path=None):
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None, allow_additional_packages=False):
             nonlocal captured_packages
             captured_packages = packages
             return []
