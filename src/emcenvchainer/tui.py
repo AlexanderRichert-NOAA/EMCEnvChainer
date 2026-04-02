@@ -1491,6 +1491,7 @@ class EmcEnvChainerTUI:
         # Combine dependencies and upgradable packages for selection
         all_packages = []
         upgradable_names = {pkg['name'] for pkg in upgradable_packages}
+        app_metapackage = selected_app.config.get("spack_metapackage", "")
         
         # Add upgradable packages first (these are preferred)
         for pkg in upgradable_packages:
@@ -1498,7 +1499,8 @@ class EmcEnvChainerTUI:
                 "name": pkg['name'],
                 "current_version": pkg['version'],
                 "type": "upgradable", 
-                "source": pkg
+                "source": pkg,
+                "application_metapackage": app_metapackage,
             })
         
         # Add dependencies only if they're not already available as upgradable packages
@@ -1508,7 +1510,8 @@ class EmcEnvChainerTUI:
                     "name": dep['name'],
                     "current_version": dep['version'],
                     "type": "dependency",
-                    "source": dep
+                    "source": dep,
+                    "application_metapackage": app_metapackage,
                 })
         
         if not all_packages:
@@ -1645,6 +1648,9 @@ class EmcEnvChainerTUI:
                 # Get package specification with version and variants
                 spec = self._get_package_specification(stdscr, pkg, spack_manager, upstream_path)
                 if spec:
+                    metapackage = pkg.get("application_metapackage")
+                    if metapackage:
+                        spec["application_metapackage"] = metapackage
                     selected_packages.append(spec)
 
         # Preserve existing behavior: unselected base packages are still included unchanged.

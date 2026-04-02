@@ -24,11 +24,13 @@ class Config:
             "applications": {
                 "ufs_weather_model": {
                     "name": "UFS Weather Model",
+                    "spack_metapackage": "ufs-weather-model-env",
                     "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 },
                 "global_workflow": {
                     "name": "Global Workflow",
+                    "spack_metapackage": "global-workflow-env",
                     "package_versions_url": "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/versions/spack.ver",
                     "package_versions_format": "shell_exports",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'

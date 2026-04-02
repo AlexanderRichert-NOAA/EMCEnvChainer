@@ -2460,6 +2460,65 @@ def func(): pass
         mock_run.side_effect = RuntimeError("boom")
         assert spack_manager._get_upstream_package_info(tmp_path, [{'name':'pkg'}]) == {}
 
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_metapackage_tie_breaker(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """Should prefer duplicate package spec matching metapackage dependency output."""
+        packages = [{
+            'name': 'hdf5',
+            'application_metapackage': 'global-workflow-env',
+        }]
+
+        all_packages_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                'hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+                'hdf5:VERSION:1.12.2:VARIANTS:~mpi:FLAGS::EXTERNAL:False\n'
+            )
+        )
+        deps_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout='hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+        )
+
+        # First call is metapackage deps query, second call is full env package query.
+        mock_run.side_effect = [deps_result, all_packages_result]
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert info['hdf5']['version'] == '1.14.0'
+        assert info['hdf5']['variants'] == '+mpi'
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_current_version_overrides_metapackage_tie_breaker(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """current_version should still override version even when tie-breaker data exists."""
+        packages = [{
+            'name': 'hdf5',
+            'current_version': '1.12.2',
+            'application_metapackage': 'global-workflow-env',
+        }]
+
+        all_packages_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                'hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+                'hdf5:VERSION:1.12.2:VARIANTS:~mpi:FLAGS::EXTERNAL:False\n'
+            )
+        )
+        deps_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout='hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+        )
+
+        mock_run.side_effect = [deps_result, all_packages_result]
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert info['hdf5']['version'] == '1.12.2'
+
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_definitions_branch(self, mock_upstream, spack_manager, tmp_path):
         """When 'definitions' exist, packages go into definitions->packages."""

@@ -2037,6 +2037,40 @@ class TestEmcEnvChainerTUI:
         # Should have only dependencies
         assert len(captured_packages) == 2
         assert all(p["type"] == "dependency" for p in captured_packages)
+
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_adds_application_metapackage_metadata(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test model app packages include application metapackage metadata for tie-break logic."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+
+        mock_app = Mock()
+        mock_app.config = {"spack_metapackage": "global-workflow-env"}
+        mock_app.parse_dependencies.return_value = [
+            {"name": "hdf5", "version": "1.14.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = []
+
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+
+        captured_packages = None
+
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None, allow_additional_packages=False):
+            nonlocal captured_packages
+            captured_packages = packages
+            return []
+
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', side_effect=capture_packages):
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+
+        assert captured_packages is not None
+        assert captured_packages[0]["application_metapackage"] == "global-workflow-env"
     
     @patch('emcenvchainer.tui.TUIMenu')
     def test_get_packages_from_model_app_cancelled(self, mock_menu_class, tui_app, mock_stdscr):

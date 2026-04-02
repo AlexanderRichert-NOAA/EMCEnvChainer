@@ -58,5 +58,7 @@ class TestConfig:
         applications = config.get_applications()
         assert "ufs_weather_model" in applications
         assert "common_module_url" in applications["ufs_weather_model"]
+        assert applications["ufs_weather_model"]["spack_metapackage"] == "ufs-weather-model-env"
         assert "global_workflow" in applications
         assert "package_versions_url" in applications["global_workflow"]
+        assert applications["global_workflow"]["spack_metapackage"] == "global-workflow-env"
