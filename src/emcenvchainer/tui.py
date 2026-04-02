@@ -402,10 +402,9 @@ class PackageSpecDialog:
                     selected_hash_index = 0
                 else:
                     selected_hash_index = -1
-            elif key == ord(' '):
+            elif key == ord(' ') and current_field == SPACK_DEVELOP_IDX:
                 # Space toggles the spack_develop checkbox when it is focused
-                if current_field == SPACK_DEVELOP_IDX:
-                    spack_develop = not spack_develop
+                spack_develop = not spack_develop
             elif key in [curses.KEY_ENTER, ord('\n'), ord('\r')]:
                 # Enter on spack_develop checkbox toggles it instead of submitting
                 if current_field == SPACK_DEVELOP_IDX:
