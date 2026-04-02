@@ -72,7 +72,6 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.ursa.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.ursa.lua"
                             ]
                         },
                         "gsi": {
@@ -114,7 +113,6 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.orion.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.orion.lua"
                             ]
                         },
                         "gsi": {
@@ -155,7 +153,6 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.hercules.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.hercules.lua"
                             ]
                         },
                         "gsi": {
@@ -242,7 +239,6 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.gaeac6.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.gaeac6.lua"
                             ]
                         },
                         "gsi": {
@@ -281,7 +277,6 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.wcoss2.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.wcoss2.lua"
                             ]
                         },
                         "aqm_utils": {
