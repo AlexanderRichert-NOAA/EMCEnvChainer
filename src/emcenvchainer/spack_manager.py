@@ -37,6 +37,7 @@ class SpackManager:
         # Track packages whose recipes were retrieved from the remote Spack repository
         # during pending recipe processing for this environment creation.
         self.remote_recipes_added: List[str] = []
+        self._available_packages_cache: Optional[set[str]] = None
         self.logger = None  # Will be initialized when environment directory is created
 
         assert self.spack_exe.exists(), "Spack executable not found"
@@ -923,8 +924,27 @@ class SpackManager:
         if not package_name:
             return False
 
-        result = self._run_spack_command(['versions', '--safe', package_name])
-        return result.returncode == 0
+        available_packages = self._get_available_package_names()
+        return package_name in available_packages
+
+    def _get_available_package_names(self) -> set[str]:
+        """Get installed package names from `spack find --format {name}`."""
+        if self._available_packages_cache is not None:
+            return self._available_packages_cache
+
+        result = self._run_spack_command(['find', '--format', '{name}'])
+        if result.returncode != 0:
+            if self.logger:
+                self.logger.warning("Failed to list packages with `spack find --format {name}`")
+            self._available_packages_cache = set()
+            return self._available_packages_cache
+
+        self._available_packages_cache = {
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+        return self._available_packages_cache
 
     def _get_remote_repo_info(self, base_url: str = None) -> tuple[str, str, str]:
         """Extract Git organization, repository name, and branch from config.

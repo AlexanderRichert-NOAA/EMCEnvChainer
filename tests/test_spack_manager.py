@@ -316,6 +316,7 @@ class TestSpackManager:
         """Test package existence check when package exists."""
         mock_result = Mock()
         mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             assert spack_manager.check_package_exists("hdf5") is True
@@ -323,10 +324,24 @@ class TestSpackManager:
     def test_check_package_exists_not_found(self, spack_manager):
         """Test package existence check when package does not exist."""
         mock_result = Mock()
-        mock_result.returncode = 1
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             assert spack_manager.check_package_exists("not-a-real-package") is False
+
+    def test_check_package_exists_uses_cached_find_results(self, spack_manager):
+        """Test package existence checks use cached package list from a single find call."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\n"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
+            assert spack_manager.check_package_exists("hdf5") is True
+            assert spack_manager.check_package_exists("netcdf-c") is True
+            assert spack_manager.check_package_exists("esmf") is False
+
+            mock_run.assert_called_once_with(['find', '--format', '{name}'])
     
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
