@@ -2,6 +2,8 @@
 
 import curses
 import os
+import shlex
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Any
 
@@ -939,11 +941,17 @@ class EmcEnvChainerTUI:
         except Exception as e:
             print(f"Error running TUI: {e}")
 
-    def display_scrollable_text(self, stdscr, title: List[str], content: str):
+    def display_scrollable_text(
+        self,
+        stdscr,
+        title: List[str],
+        content: str,
+        editable_file_path: Optional[str] = None,
+        content_loader: Optional[Any] = None,
+    ):
         """Display scrollable text content."""
         stdscr.clear()
         height, width = stdscr.getmaxyx()
-        lines = content.split('\n')
         
         # Display title lines
         for i in range(len(title)):
@@ -958,6 +966,8 @@ class EmcEnvChainerTUI:
         
         # Add special note for Spack Concretize Output
         instruction_lines = ["Use UP/DOWN arrows to scroll, ENTER to continue..."]
+        if editable_file_path:
+            instruction_lines.insert(0, "Press 'e' to edit file and return to this screen.")
         if "Spack Concretize Output" in title:
             instruction_lines.append("Note: [^] indicates packages from the upstream environment(s)")
         
@@ -969,9 +979,16 @@ class EmcEnvChainerTUI:
         display_start_y = header_end_y + 1  # Add one line of spacing after header
         display_height = height - display_start_y - len(instruction_lines) - 2  # Leave room for instructions and spacing
         scroll_pos = 0
-        max_scroll = max(0, len(lines) - display_height)
         
         while True:
+            if content_loader:
+                content = content_loader()
+
+            lines = content.split('\n')
+            max_scroll = max(0, len(lines) - display_height)
+            if scroll_pos > max_scroll:
+                scroll_pos = max_scroll
+
             # Clear the content area
             for y in range(display_start_y, display_start_y + display_height):
                 stdscr.move(y, 0)
@@ -999,10 +1016,42 @@ class EmcEnvChainerTUI:
             
             if key == ord('\n') or key == ord('\r'):
                 break
+            elif key in [ord('e'), ord('E')] and editable_file_path:
+                edit_error = self._open_file_in_editor(stdscr, editable_file_path)
+                if edit_error:
+                    TUIMenu(stdscr, "Editor Error").display_info(edit_error)
             elif key == curses.KEY_UP and scroll_pos > 0:
                 scroll_pos -= 1
             elif key == curses.KEY_DOWN and scroll_pos < max_scroll:
                 scroll_pos += 1
+
+    def _open_file_in_editor(self, stdscr, file_path: str) -> Optional[str]:
+        """Open a file in an editor and restore curses mode when done."""
+        editor_cmd = os.environ.get("EDITOR", "").strip()
+
+        curses.endwin()
+        try:
+            if not editor_cmd:
+                print("$EDITOR is not set.")
+                editor_cmd = input("Enter editor command (e.g., vi, nano, 'code -w'): ").strip()
+                if not editor_cmd:
+                    return "No editor command provided. Set $EDITOR or provide a command when prompted."
+
+            cmd = shlex.split(editor_cmd)
+            if not cmd:
+                return "Invalid editor command."
+
+            cmd.append(file_path)
+            result = subprocess.run(cmd, check=False)
+            if result.returncode != 0:
+                return f"Editor exited with code {result.returncode}."
+
+            return None
+        except Exception as e:
+            return f"Failed to open editor: {e}"
+        finally:
+            stdscr.refresh()
+            curses.doupdate()
 
     def run_interactive_install(self, stdscr, spack_manager, env_path: str) -> bool:
         """Run spack install with live output, temporarily exiting curses mode.
@@ -1770,12 +1819,18 @@ class EmcEnvChainerTUI:
             self._generate_activate_script(env_path, upstream_path)
             
             # Concretize
-            with open(os.path.join(env_path, "spack.yaml"), "r") as f:
-                spack_yaml = f.read()
+            spack_yaml_path = os.path.join(env_path, "spack.yaml")
+
+            def _load_spack_yaml() -> str:
+                with open(spack_yaml_path, "r") as f:
+                    return f.read()
+
             self.display_scrollable_text(
                 stdscr,
                 [f"Environment created at: {env_path}", "Proceed with concretization?", "Make any manual changes to spack.yaml & package.py's now.", "spack.yaml:"],
-                spack_yaml
+                _load_spack_yaml(),
+                editable_file_path=spack_yaml_path,
+                content_loader=_load_spack_yaml,
             )
             menu.display_info("Concretizing environment...", wait_for_key=False)
             success, concretize_output = spack_manager.concretize_environment(env_path)

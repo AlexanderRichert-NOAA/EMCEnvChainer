@@ -947,6 +947,40 @@ class TestEmcEnvChainerTUI:
         assert mock_stdscr.clear.called
         assert mock_stdscr.addstr.called
         assert mock_stdscr.refresh.called
+
+    def test_display_scrollable_text_edit_hotkey_opens_editor(self, tui_app, mock_stdscr):
+        """Test that pressing 'e' opens editor and returns to same screen."""
+        title = ["Environment created", "spack.yaml:"]
+        content = "spack:\n  specs: []"
+
+        mock_stdscr.getch.side_effect = [ord('e'), ord('\n')]
+
+        with patch.object(tui_app, '_open_file_in_editor', return_value=None) as mock_open_editor:
+            tui_app.display_scrollable_text(
+                mock_stdscr,
+                title,
+                content,
+                editable_file_path="/tmp/spack.yaml",
+            )
+
+        mock_open_editor.assert_called_once_with(mock_stdscr, "/tmp/spack.yaml")
+
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('subprocess.run')
+    def test_open_file_in_editor_prompts_when_editor_unset(self, mock_run, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test editor prompt fallback when $EDITOR is not set."""
+        mock_run.return_value = Mock(returncode=0)
+
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('builtins.input', return_value='nano'):
+                result = tui_app._open_file_in_editor(mock_stdscr, '/tmp/spack.yaml')
+
+        assert result is None
+        mock_run.assert_called_once_with(['nano', '/tmp/spack.yaml'], check=False)
+        mock_endwin.assert_called_once()
+        mock_stdscr.refresh.assert_called()
+        mock_doupdate.assert_called_once()
     
     def test_run_interactive_install_success(self, tui_app, mock_stdscr):
         """Test successful interactive install."""
