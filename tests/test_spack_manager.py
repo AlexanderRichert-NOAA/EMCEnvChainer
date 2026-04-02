@@ -343,6 +343,31 @@ class TestSpackManager:
 
             mock_run.assert_called_once_with(['-e', '/path/to/upstream/env', 'find', '--format', '{name}'])
 
+    def test_check_package_exists_normalizes_install_path_to_env(self, spack_manager):
+        """Test install path input is normalized to the parent env path for spack -e."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\n"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
+            assert (
+                spack_manager.check_package_exists(
+                    "hdf5",
+                    "/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneapi-2024.2.1/install/",
+                )
+                is True
+            )
+
+            mock_run.assert_called_once_with(
+                [
+                    '-e',
+                    '/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneapi-2024.2.1',
+                    'find',
+                    '--format',
+                    '{name}',
+                ]
+            )
+
     def test_check_package_exists_raises_without_upstream_path(self, spack_manager):
         """Test package existence check fails fast when upstream path is missing."""
         with pytest.raises(ValueError, match="upstream_env_path is required"):
