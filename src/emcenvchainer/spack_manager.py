@@ -910,6 +910,22 @@ class SpackManager:
 
         return version in available_versions
 
+    def check_package_exists(self, package_name: str) -> bool:
+        """Check if a package exists in the current Spack installation.
+
+        Args:
+            package_name: Name of the package to check
+
+        Returns:
+            True if package exists, False otherwise
+        """
+        package_name = package_name.strip()
+        if not package_name:
+            return False
+
+        result = self._run_spack_command(['versions', '--safe', package_name])
+        return result.returncode == 0
+
     def _get_remote_repo_info(self, base_url: str = None) -> tuple[str, str, str]:
         """Extract Git organization, repository name, and branch from config.
         

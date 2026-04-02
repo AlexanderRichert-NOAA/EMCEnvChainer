@@ -311,6 +311,22 @@ class TestSpackManager:
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             result = spack_manager.check_package_version_exists("nonexistent-pkg", "1.0.0")
             assert result is False
+
+    def test_check_package_exists_success(self, spack_manager):
+        """Test package existence check when package exists."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            assert spack_manager.check_package_exists("hdf5") is True
+
+    def test_check_package_exists_not_found(self, spack_manager):
+        """Test package existence check when package does not exist."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            assert spack_manager.check_package_exists("not-a-real-package") is False
     
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)

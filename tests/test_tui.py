@@ -2263,6 +2263,45 @@ class TestEmcEnvChainerTUI:
         assert result is not None
         assert len(result) == 1
         assert result[0]["name"] == "netcdf-c"
+
+    @patch('emcenvchainer.tui.TUIMenu')
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_skips_unknown_spack_packages(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
+        """Test that packages not found in Spack are filtered out with a warning."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [0, 1]
+
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.pending_recipes = {}
+        mock_spack_manager.pending_git_commits = []
+        mock_spack_manager.pending_checksums = []
+        mock_spack_manager.check_package_exists.side_effect = lambda name: name != "external-tool"
+
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "external-tool", "current_version": "1.0.0", "type": "dependency"}
+        ]
+
+        specs = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "external-tool", "version": "1.0.0"}
+        ]
+
+        with patch.object(tui_app, '_get_package_specification', side_effect=specs):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "netcdf-c"
+
+        warning_calls = [call for call in mock_menu.display_info.call_args_list if "Skipping packages not found in Spack" in str(call)]
+        assert len(warning_calls) == 1
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_partial_selection(self, mock_radio_class, tui_app, mock_stdscr):

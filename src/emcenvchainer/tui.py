@@ -1580,7 +1580,71 @@ class EmcEnvChainerTUI:
             ]
         )
 
+        selected_packages = self._filter_packages_available_in_spack(
+            stdscr,
+            selected_packages,
+            spack_manager,
+        )
+
         return selected_packages if selected_packages else None
+
+    def _filter_packages_available_in_spack(
+        self,
+        stdscr,
+        packages: List[Dict],
+        spack_manager: SpackManager,
+    ) -> List[Dict]:
+        """Keep only packages that exist in Spack and warn for skipped packages."""
+        if not packages:
+            return packages
+
+        filtered_packages = []
+        missing_packages = []
+        exists_cache: Dict[str, bool] = {}
+
+        for pkg in packages:
+            package_name = str(pkg.get("name", "")).strip()
+            if not package_name:
+                continue
+
+            if package_name not in exists_cache:
+                exists_cache[package_name] = self._is_package_available_for_env(spack_manager, package_name)
+
+            if exists_cache[package_name]:
+                filtered_packages.append(pkg)
+            else:
+                missing_packages.append(pkg)
+
+        if missing_packages:
+            unique_missing = sorted({pkg["name"] for pkg in missing_packages})
+            warning_lines = [
+                "Warning: Skipping packages not found in Spack:",
+                ", ".join(unique_missing),
+                "These packages were not added to spack.yaml.",
+            ]
+            TUIMenu(stdscr, "Package Validation").display_info("\n".join(warning_lines))
+
+        return filtered_packages
+
+    def _is_package_available_for_env(self, spack_manager: SpackManager, package_name: str) -> bool:
+        """Check package availability, including pending custom recipe operations."""
+        pending_recipes = getattr(spack_manager, "pending_recipes", {})
+        if isinstance(pending_recipes, dict) and package_name in pending_recipes:
+            return True
+
+        pending_git_commits = getattr(spack_manager, "pending_git_commits", [])
+        if isinstance(pending_git_commits, list):
+            for item in pending_git_commits:
+                if isinstance(item, dict) and item.get("package_name") == package_name:
+                    return True
+
+        pending_checksums = getattr(spack_manager, "pending_checksums", [])
+        if isinstance(pending_checksums, list):
+            for item in pending_checksums:
+                if isinstance(item, dict) and item.get("package_name") == package_name:
+                    return True
+
+        return bool(spack_manager.check_package_exists(package_name))
     
     def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[Dict]:
         """Get detailed package specification (version, variants) from user.
