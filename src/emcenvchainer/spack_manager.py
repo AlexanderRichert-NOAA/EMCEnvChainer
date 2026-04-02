@@ -949,7 +949,11 @@ class SpackManager:
             return False
 
         available_packages = self._get_available_package_names(upstream_env_path)
-        return package_name in available_packages
+        if package_name in available_packages:
+            return True
+        # Spack normalises hyphens and underscores interchangeably; try both forms.
+        alternate_name = package_name.replace("-", "_") if "-" in package_name else package_name.replace("_", "-")
+        return alternate_name in available_packages
 
     def _get_available_package_names(self, upstream_env_path: str) -> set[str]:
         """Get installed package names from `spack -e <env> find --format {name}`."""

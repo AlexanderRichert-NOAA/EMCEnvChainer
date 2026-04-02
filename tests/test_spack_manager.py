@@ -380,6 +380,23 @@ class TestSpackManager:
         with pytest.raises(ValueError, match="upstream_env_path is required"):
             spack_manager.check_package_exists("hdf5", "")
 
+    def test_check_package_exists_hyphen_underscore_normalization(self, spack_manager):
+        """Test that hyphen/underscore variants are matched interchangeably."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "netcdf-c\nwrf_io\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            # Package stored with hyphen, queried with underscore
+            assert spack_manager.check_package_exists("netcdf_c", upstream_install_path) is True
+            # Package stored with underscore, queried with hyphen
+            assert spack_manager.check_package_exists("wrf-io", upstream_install_path) is True
+            # Exact match still works
+            assert spack_manager.check_package_exists("netcdf-c", upstream_install_path) is True
+            # Non-existent package still returns False
+            assert spack_manager.check_package_exists("esmf", upstream_install_path) is False
+
     def test_check_package_exists_raises_when_find_fails(self, spack_manager):
         """Test package existence check fails fast when spack find command fails."""
         mock_result = Mock()
