@@ -215,8 +215,10 @@ class PackageSpecDialog:
         
         field_names = ["Package Name", "Version", "Variants", "Upstream Hash (lock in upstream package; optional)"]
         field_keys = list(fields.keys())
+        SPACK_DEVELOP_IDX = len(field_keys)  # Index for the spack_develop checkbox
         current_field = 0
         selected_hash_index = -1  # Track which hash is selected (-1 = none selected)
+        spack_develop = False  # Whether to run 'spack develop' for this package
         
         # Track cursor position for each field (only for actual text fields)
         cursors = [len(fields[k]) for k in fields.keys()] + [0]  # Add 0 for continue button
@@ -304,17 +306,29 @@ class PackageSpecDialog:
                     final_cursor_y = box_y
                     final_cursor_x = box_x + 1 + display_cursor
             
-            # Position cursor and make it visible (only for non-hash fields)
-            if field_keys[current_field] != "upstream_hash":
+            # Render spack_develop checkbox below the other fields
+            hash_extra = 0
+            if available_hashes:
+                hash_extra = min(len(available_hashes), 5) + (1 if len(available_hashes) > 5 else 0)
+            spack_develop_y = 5 + len(field_keys) * 2 + hash_extra + 1
+            sd_checkbox = "[X]" if spack_develop else "[ ]"
+            sd_label = "Develop with persistent source code directory ('spack develop')"
+            if current_field == SPACK_DEVELOP_IDX:
+                self.stdscr.addstr(spack_develop_y, 2, f"> {sd_checkbox} {sd_label}", curses.A_REVERSE)
+            else:
+                self.stdscr.addstr(spack_develop_y, 4, f"{sd_checkbox} {sd_label}")
+            
+            # Position cursor and make it visible (only for non-hash, non-checkbox fields)
+            if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "upstream_hash":
                 curses.curs_set(1)  # Show cursor
                 self.stdscr.move(final_cursor_y, final_cursor_x)
             else:
-                curses.curs_set(0)  # Hide cursor when on hash field
+                curses.curs_set(0)  # Hide cursor when on hash or checkbox field
             
             # Instructions
             instructions = [
                 "Use ↑/↓ or Tab to navigate. On hash field, ↑/↓ selects from list.",
-                "Type to edit text fields. Backspace/Delete/Home/End. Enter to continue."
+                "Space to toggle checkbox. Type to edit text fields. Enter to continue."
             ]
             for i, instruction in enumerate(instructions):
                 self.stdscr.addstr(height - 4 + i, 2, instruction)
@@ -325,7 +339,11 @@ class PackageSpecDialog:
             key = self.stdscr.getch()
             
             if key == curses.KEY_UP:
-                if current_field > 0:
+                if current_field == SPACK_DEVELOP_IDX:
+                    # Move up from spack_develop checkbox to last text/hash field
+                    current_field = len(field_keys) - 1
+                    selected_hash_index = -1
+                elif current_field > 0:
                     # Moving up between fields
                     if field_keys[current_field] == "upstream_hash":
                         # Apply selected hash before leaving
@@ -335,7 +353,7 @@ class PackageSpecDialog:
                             fields["upstream_hash"] = ""
                     current_field -= 1
                     selected_hash_index = -1  # Reset hash selection
-                elif field_keys[current_field] == "upstream_hash" and available_hashes:
+                elif current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                     # Navigate within hash list
                     if selected_hash_index > 0:
                         selected_hash_index -= 1
@@ -349,7 +367,7 @@ class PackageSpecDialog:
                             current_field -= 1
                             selected_hash_index = -1
             elif key == curses.KEY_DOWN:
-                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                     # Navigate within hash list
                     if selected_hash_index < len(available_hashes) - 1:
                         selected_hash_index += 1
@@ -359,38 +377,45 @@ class PackageSpecDialog:
                             fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
                         else:
                             fields["upstream_hash"] = ""
-                        if current_field < len(field_keys) - 1:
+                        if current_field < SPACK_DEVELOP_IDX:
                             current_field += 1
                             selected_hash_index = -1
-                elif current_field < len(field_keys) - 1:
+                elif current_field < SPACK_DEVELOP_IDX:
                     # Moving down between fields
                     current_field += 1
                     # Auto-select first hash if entering hash field
-                    if field_keys[current_field] == "upstream_hash" and available_hashes:
+                    if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                         selected_hash_index = 0
                     else:
                         selected_hash_index = -1
             elif key == ord('\t'):
-                # Tab moves to next field
-                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                # Tab moves to next field (cycles through all including spack_develop)
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                     # Apply selected hash before leaving
                     if selected_hash_index >= 0:
                         fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
                     else:
                         fields["upstream_hash"] = ""
-                current_field = (current_field + 1) % len(field_keys)
+                current_field = (current_field + 1) % (SPACK_DEVELOP_IDX + 1)
                 # Auto-select first hash if entering hash field
-                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                     selected_hash_index = 0
                 else:
                     selected_hash_index = -1
+            elif key == ord(' ') and current_field == SPACK_DEVELOP_IDX:
+                # Space toggles the spack_develop checkbox when it is focused
+                spack_develop = not spack_develop
             elif key in [curses.KEY_ENTER, ord('\n'), ord('\r')]:
+                # Enter on spack_develop checkbox toggles it instead of submitting
+                if current_field == SPACK_DEVELOP_IDX:
+                    spack_develop = not spack_develop
+                    continue
                 if not fields["name"].strip():
                     self._show_error("Package name is required!")
                     continue
                 
                 # Apply selected hash if on hash field
-                if field_keys[current_field] == "upstream_hash" and available_hashes:
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
                     if selected_hash_index >= 0:
                         fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
                     else:
@@ -423,27 +448,28 @@ class PackageSpecDialog:
                         validation_performed = True
                         last_validated_spec = current_spec
                 
+                fields["spack_develop"] = spack_develop
                 curses.curs_set(0)  # Hide cursor
                 return fields
             elif key == curses.KEY_LEFT:
                 # Move cursor left in current field (only for text fields)
-                if field_keys[current_field] != "continue" and cursors[current_field] > 0:
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue" and cursors[current_field] > 0:
                     cursors[current_field] -= 1
             elif key == curses.KEY_RIGHT:
                 # Move cursor right in current field (only for text fields)
-                if field_keys[current_field] != "continue" and cursors[current_field] < len(fields[field_keys[current_field]]):
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue" and cursors[current_field] < len(fields[field_keys[current_field]]):
                     cursors[current_field] += 1
             elif key == curses.KEY_HOME or key == 1:  # Ctrl+A
                 # Move to beginning of field (only for text fields)
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     cursors[current_field] = 0
             elif key == curses.KEY_END or key == 5:  # Ctrl+E
                 # Move to end of field (only for text fields)
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     cursors[current_field] = len(fields[field_keys[current_field]])
             elif key in [curses.KEY_BACKSPACE, 127, 8]:  # Backspace
                 # Only for text fields
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     pos = cursors[current_field]
                     if pos > 0:
                         field_value = fields[field_keys[current_field]]
@@ -451,22 +477,23 @@ class PackageSpecDialog:
                         cursors[current_field] -= 1
             elif key == curses.KEY_DC:  # Delete
                 # Only for text fields
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     pos = cursors[current_field]
                     field_value = fields[field_keys[current_field]]
                     if pos < len(field_value):
                         fields[field_keys[current_field]] = field_value[:pos] + field_value[pos+1:]
             elif key == 24:  # Ctrl+X - Clear field
                 # Only for text fields
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     fields[field_keys[current_field]] = ""
                     cursors[current_field] = 0
                 
+                fields["spack_develop"] = spack_develop
                 curses.curs_set(0)  # Hide cursor
                 return fields
             elif 32 <= key <= 126:  # Printable characters
                 # Insert character at cursor position (only for text fields)
-                if field_keys[current_field] != "continue":
+                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "continue":
                     field_value = fields[field_keys[current_field]]
                     pos = cursors[current_field]
                     fields[field_keys[current_field]] = field_value[:pos] + chr(key) + field_value[pos:]

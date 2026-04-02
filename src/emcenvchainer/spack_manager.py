@@ -478,6 +478,11 @@ class SpackManager:
             with open(spack_yaml_path, 'w') as f:
                 f.write(spack_yaml)
             
+            # Run 'spack develop' for packages that requested it
+            for pkg in packages:
+                if pkg.get("spack_develop"):
+                    self._run_spack_develop(str(env_path), pkg)
+            
             # Process any pending checksum operations (must be done after spack.yaml is created)
             checksum_packages_needing_edit = self._process_pending_checksums(str(env_path))
             packages_needing_edit.extend(checksum_packages_needing_edit)
@@ -496,6 +501,24 @@ class SpackManager:
                 self.logger.error(error_msg)
             raise RuntimeError(error_msg)
     
+    def _run_spack_develop(self, env_path: str, pkg: Dict) -> None:
+        """Run 'spack develop' for a package inside the given environment.
+
+        Args:
+            env_path: Path to the Spack environment
+            pkg: Package dict with at least 'name' and optionally 'version'
+        """
+        spec = self._build_spec_string(pkg)
+        self._log_and_print(f"Running 'spack develop' for {spec}...")
+        result = self._run_spack_command(['-e', env_path, 'develop', spec], cwd=env_path)
+        if result.returncode == 0:
+            self._log_and_print(f"✓ 'spack develop' succeeded for {spec}")
+        else:
+            self._log_and_print(
+                f"✗ 'spack develop' failed for {spec}: {result.stderr}",
+                "warning",
+            )
+
     def _find_upstream_env_path(self, upstream_install_path: str) -> Path:
         """Find the upstream environment path from the install path.
         
@@ -933,9 +956,9 @@ class SpackManager:
         if not upstream_env_path:
             raise ValueError("upstream_env_path is required for package availability checks")
 
+        # go from spack_env/install/ to spack_env/:
         normalized_env_path = upstream_env_path.rstrip("/")
-        if normalized_env_path.endswith("/install"):
-            normalized_env_path = os.path.dirname(normalized_env_path)
+        normalized_env_path = os.path.dirname(normalized_env_path)
 
         cache_key = normalized_env_path
         if cache_key in self._available_packages_cache:
