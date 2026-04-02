@@ -1548,14 +1548,41 @@ class EmcEnvChainerTUI:
         # Create display options for radio button menu
         options = []
         display_packages = []
+        status_lines: List[str] = []
+        exists_cache: Dict[str, bool] = {}
+        skipped_unavailable: List[str] = []
+
         for pkg in all_packages:
             # Skip ufs_common, cmake, and spack-stack metamodules (stack-*)
             if pkg["name"] in ["ufs_common", "cmake"] or pkg["name"].startswith("stack-"):
+                continue
+
+            package_name = str(pkg.get("name", "")).strip()
+            if package_name not in exists_cache:
+                exists_cache[package_name] = self._is_package_available_for_env(spack_manager, package_name)
+
+            if not exists_cache[package_name]:
+                skipped_unavailable.append(package_name)
                 continue
                 
             pkg_type = "📦"
             options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
             display_packages.append({"kind": "base", "pkg": pkg})
+
+        if skipped_unavailable:
+            unique_missing = sorted(set(skipped_unavailable))
+            status_lines = [
+                f"Warning: {len(unique_missing)} package(s) omitted (not found in Spack).",
+                "Skipped: " + ", ".join(unique_missing),
+            ]
+
+        if not display_packages and not allow_additional_packages:
+            menu = TUIMenu(stdscr, "No Supported Packages")
+            msg = "No packages from module files are available in Spack."
+            if status_lines:
+                msg += "\n\n" + "\n".join(status_lines)
+            menu.display_info(msg)
+            return []
 
         radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
 
@@ -1591,6 +1618,7 @@ class EmcEnvChainerTUI:
             options,
             extra_instructions=extra_instructions,
             key_actions=key_actions,
+            status_lines=status_lines,
         )
         
         if selected_indices is None:
@@ -1629,51 +1657,7 @@ class EmcEnvChainerTUI:
             ]
         )
 
-        selected_packages = self._filter_packages_available_in_spack(
-            stdscr,
-            selected_packages,
-            spack_manager,
-        )
-
         return selected_packages if selected_packages else None
-
-    def _filter_packages_available_in_spack(
-        self,
-        stdscr,
-        packages: List[Dict],
-        spack_manager: SpackManager,
-    ) -> List[Dict]:
-        """Keep only packages that exist in Spack and warn for skipped packages."""
-        if not packages:
-            return packages
-
-        filtered_packages = []
-        missing_packages = []
-        exists_cache: Dict[str, bool] = {}
-
-        for pkg in packages:
-            package_name = str(pkg.get("name", "")).strip()
-            if not package_name:
-                continue
-
-            if package_name not in exists_cache:
-                exists_cache[package_name] = self._is_package_available_for_env(spack_manager, package_name)
-
-            if exists_cache[package_name]:
-                filtered_packages.append(pkg)
-            else:
-                missing_packages.append(pkg)
-
-        if missing_packages:
-            unique_missing = sorted({pkg["name"] for pkg in missing_packages})
-            warning_lines = [
-                "Warning: Skipping packages not found in Spack:",
-                ", ".join(unique_missing),
-                "These packages will not be added to spack.yaml.",
-            ]
-            TUIMenu(stdscr, "Package Validation").display_info("\n".join(warning_lines))
-
-        return filtered_packages
 
     def _is_package_available_for_env(self, spack_manager: SpackManager, package_name: str) -> bool:
         """Check package availability, including pending custom recipe operations."""

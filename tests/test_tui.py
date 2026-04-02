@@ -2298,16 +2298,12 @@ class TestEmcEnvChainerTUI:
         assert len(result) == 1
         assert result[0]["name"] == "netcdf-c"
 
-    @patch('emcenvchainer.tui.TUIMenu')
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_with_radio_buttons_skips_unknown_spack_packages(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
-        """Test that packages not found in Spack are filtered out with a warning."""
+    def test_select_packages_with_radio_buttons_skips_unknown_spack_packages(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that packages not found in Spack are omitted before checklist display."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
-        mock_radio.display_menu.return_value = [0, 1]
-
-        mock_menu = Mock()
-        mock_menu_class.return_value = mock_menu
+        mock_radio.display_menu.return_value = [0]
 
         mock_spack_manager = Mock()
         mock_spack_manager.pending_recipes = {}
@@ -2334,8 +2330,15 @@ class TestEmcEnvChainerTUI:
         assert len(result) == 1
         assert result[0]["name"] == "netcdf-c"
 
-        warning_calls = [call for call in mock_menu.display_info.call_args_list if "Skipping packages not found in Spack" in str(call)]
-        assert len(warning_calls) == 1
+        options = mock_radio.display_menu.call_args[0][0]
+        assert len(options) == 1
+        assert "netcdf-c" in options[0]
+        assert "external-tool" not in str(options)
+
+        status_lines = mock_radio.display_menu.call_args[1]["status_lines"]
+        assert status_lines is not None
+        assert any("omitted" in line.lower() for line in status_lines)
+        assert any("external-tool" in line for line in status_lines)
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_partial_selection(self, mock_radio_class, tui_app, mock_stdscr):
@@ -2386,12 +2389,15 @@ class TestEmcEnvChainerTUI:
         # Verify RadioButtonMenu was created with correct title
         mock_radio_class.assert_called_once_with(mock_stdscr, "Select packages to update, modify, or lock from upstream")
     
+    @patch('emcenvchainer.tui.TUIMenu')
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, tui_app, mock_stdscr):
+    def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
         """Test when all packages are filtered out."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
-        mock_radio.display_menu.return_value = []
+
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
         
         mock_spack_manager = Mock()
         mock_app = Mock()
@@ -2406,9 +2412,9 @@ class TestEmcEnvChainerTUI:
         with patch.object(tui_app, '_get_package_specification', return_value=None):
             result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
         
-        # Should still work with empty options list
-        options = mock_radio.display_menu.call_args[0][0]
-        assert len(options) == 0
+        # Should return early without showing checklist
+        mock_radio.display_menu.assert_not_called()
+        mock_menu.display_info.assert_called_once()
         assert result == []
 
     @patch('emcenvchainer.tui.PackageSpecDialog')
