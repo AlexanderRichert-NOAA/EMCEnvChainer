@@ -1150,7 +1150,7 @@ class EmcEnvChainerTUI:
         
         # Get packages and SpackManager
         packages, spack_manager = self._get_package_specifications_with_manager(stdscr, selected_installation)
-        if not packages or not spack_manager:
+        if packages is None or spack_manager is None:
             return
         
         self._create_environment(stdscr, selected_installation, packages, spack_manager, env_name)
