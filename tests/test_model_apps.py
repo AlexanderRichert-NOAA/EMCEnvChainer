@@ -41,9 +41,9 @@ class TestModelApplication:
         choices = app.get_module_url_choices()
         
         assert len(choices) == 2
-        assert choices[0]['name'] == "hera (INTEL)"
+        assert choices[0]['name'] == "hera.intel.lua"
         assert choices[0]['url'] == "https://example.com/hera.intel.lua"
-        assert choices[1]['name'] == "hera (GNU)"
+        assert choices[1]['name'] == "hera.gnu.lua"
         assert choices[1]['url'] == "https://example.com/hera.gnu.lua"
     
     @patch('requests.get')
@@ -382,8 +382,8 @@ load("hdf5/1.10.8")
         # Test module URL choices
         choices = app.get_module_url_choices()
         assert len(choices) == 2
-        assert choices[0]['name'] == "ufs_hera (INTEL)"
-        assert choices[1]['name'] == "ufs_hera (GNU)"
+        assert choices[0]['name'] == "ufs_hera.intel.lua"
+        assert choices[1]['name'] == "ufs_hera.gnu.lua"
         
         # Test getting upgradable packages
         upgradable_packages = app.get_upgradable_packages()
