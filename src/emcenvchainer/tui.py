@@ -1562,7 +1562,9 @@ class EmcEnvChainerTUI:
 
             package_name = str(pkg.get("name", "")).strip()
             if package_name not in exists_cache:
-                exists_cache[package_name] = self._is_package_available_for_env(spack_manager, package_name)
+                exists_cache[package_name] = self._is_package_available_for_env(
+                    spack_manager, package_name, upstream_path
+                )
 
             if not exists_cache[package_name]:
                 skipped_unavailable.append(package_name)
@@ -1664,7 +1666,9 @@ class EmcEnvChainerTUI:
 
         return selected_packages if selected_packages else None
 
-    def _is_package_available_for_env(self, spack_manager: SpackManager, package_name: str) -> bool:
+    def _is_package_available_for_env(
+        self, spack_manager: SpackManager, package_name: str, upstream_path: str
+    ) -> bool:
         """Check package availability, including pending custom recipe operations."""
         pending_recipes = getattr(spack_manager, "pending_recipes", {})
         if isinstance(pending_recipes, dict) and package_name in pending_recipes:
@@ -1682,7 +1686,7 @@ class EmcEnvChainerTUI:
                 if isinstance(item, dict) and item.get("package_name") == package_name:
                     return True
 
-        return bool(spack_manager.check_package_exists(package_name))
+        return bool(spack_manager.check_package_exists(package_name, upstream_path))
     
     def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[Dict]:
         """Get detailed package specification (version, variants) from user.

@@ -37,7 +37,7 @@ class SpackManager:
         # Track packages whose recipes were retrieved from the remote Spack repository
         # during pending recipe processing for this environment creation.
         self.remote_recipes_added: List[str] = []
-        self._available_packages_cache: Optional[set[str]] = None
+        self._available_packages_cache: Dict[str, set[str]] = {}
         self.logger = None  # Will be initialized when environment directory is created
 
         assert self.spack_exe.exists(), "Spack executable not found"
@@ -911,11 +911,12 @@ class SpackManager:
 
         return version in available_versions
 
-    def check_package_exists(self, package_name: str) -> bool:
+    def check_package_exists(self, package_name: str, upstream_env_path: str) -> bool:
         """Check if a package exists in the current Spack installation.
 
         Args:
             package_name: Name of the package to check
+            upstream_env_path: Upstream environment path to use with `spack -e`
 
         Returns:
             True if package exists, False otherwise
@@ -924,27 +925,31 @@ class SpackManager:
         if not package_name:
             return False
 
-        available_packages = self._get_available_package_names()
+        available_packages = self._get_available_package_names(upstream_env_path)
         return package_name in available_packages
 
-    def _get_available_package_names(self) -> set[str]:
-        """Get installed package names from `spack find --format {name}`."""
-        if self._available_packages_cache is not None:
-            return self._available_packages_cache
+    def _get_available_package_names(self, upstream_env_path: str) -> set[str]:
+        """Get installed package names from `spack -e <env> find --format {name}`."""
+        if not upstream_env_path:
+            raise ValueError("upstream_env_path is required for package availability checks")
 
-        result = self._run_spack_command(['find', '--format', '{name}'])
+        cache_key = upstream_env_path
+        if cache_key in self._available_packages_cache:
+            return self._available_packages_cache[cache_key]
+
+        result = self._run_spack_command(['-e', upstream_env_path, 'find', '--format', '{name}'])
         if result.returncode != 0:
-            if self.logger:
-                self.logger.warning("Failed to list packages with `spack find --format {name}`")
-            self._available_packages_cache = set()
-            return self._available_packages_cache
+            error_msg = "Failed to list packages with `spack find --format {name}`"
+            if result.stderr:
+                error_msg += f": {result.stderr.strip()}"
+            raise RuntimeError(error_msg)
 
-        self._available_packages_cache = {
+        self._available_packages_cache[cache_key] = {
             line.strip()
             for line in result.stdout.splitlines()
             if line.strip()
         }
-        return self._available_packages_cache
+        return self._available_packages_cache[cache_key]
 
     def _get_remote_repo_info(self, base_url: str = None) -> tuple[str, str, str]:
         """Extract Git organization, repository name, and branch from config.

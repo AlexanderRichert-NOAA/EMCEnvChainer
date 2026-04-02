@@ -319,7 +319,7 @@ class TestSpackManager:
         mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
-            assert spack_manager.check_package_exists("hdf5") is True
+            assert spack_manager.check_package_exists("hdf5", "/path/to/upstream/env") is True
 
     def test_check_package_exists_not_found(self, spack_manager):
         """Test package existence check when package does not exist."""
@@ -328,7 +328,7 @@ class TestSpackManager:
         mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
-            assert spack_manager.check_package_exists("not-a-real-package") is False
+            assert spack_manager.check_package_exists("not-a-real-package", "/path/to/upstream/env") is False
 
     def test_check_package_exists_uses_cached_find_results(self, spack_manager):
         """Test package existence checks use cached package list from a single find call."""
@@ -337,11 +337,27 @@ class TestSpackManager:
         mock_result.stdout = "hdf5\nnetcdf-c\n"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
-            assert spack_manager.check_package_exists("hdf5") is True
-            assert spack_manager.check_package_exists("netcdf-c") is True
-            assert spack_manager.check_package_exists("esmf") is False
+            assert spack_manager.check_package_exists("hdf5", "/path/to/upstream/env") is True
+            assert spack_manager.check_package_exists("netcdf-c", "/path/to/upstream/env") is True
+            assert spack_manager.check_package_exists("esmf", "/path/to/upstream/env") is False
 
-            mock_run.assert_called_once_with(['find', '--format', '{name}'])
+            mock_run.assert_called_once_with(['-e', '/path/to/upstream/env', 'find', '--format', '{name}'])
+
+    def test_check_package_exists_raises_without_upstream_path(self, spack_manager):
+        """Test package existence check fails fast when upstream path is missing."""
+        with pytest.raises(ValueError, match="upstream_env_path is required"):
+            spack_manager.check_package_exists("hdf5", "")
+
+    def test_check_package_exists_raises_when_find_fails(self, spack_manager):
+        """Test package existence check fails fast when spack find command fails."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "spack find failed"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            with pytest.raises(RuntimeError, match="Failed to list packages"):
+                spack_manager.check_package_exists("hdf5", "/path/to/upstream/env")
     
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
