@@ -967,7 +967,7 @@ class EmcEnvChainerTUI:
         # Add special note for Spack Concretize Output
         instruction_lines = ["Use UP/DOWN arrows to scroll, ENTER to continue..."]
         if editable_file_path:
-            instruction_lines.insert(0, "Press 'e' to edit file and return to this screen.")
+            instruction_lines.insert(0, "Press 'e' to edit spack.yaml.")
         if "Spack Concretize Output" in title:
             instruction_lines.append("Note: [^] indicates packages from the upstream environment(s)")
         
