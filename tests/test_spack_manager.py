@@ -311,6 +311,85 @@ class TestSpackManager:
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             result = spack_manager.check_package_version_exists("nonexistent-pkg", "1.0.0")
             assert result is False
+
+    def test_check_package_exists_success(self, spack_manager):
+        """Test package existence check when package exists."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            assert spack_manager.check_package_exists("hdf5", upstream_install_path) is True
+
+    def test_check_package_exists_not_found(self, spack_manager):
+        """Test package existence check when package does not exist."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            assert spack_manager.check_package_exists("not-a-real-package", upstream_install_path) is False
+
+    def test_check_package_exists_uses_cached_find_results(self, spack_manager):
+        """Test package existence checks use cached package list from a single find call."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\nnetcdf-c\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
+            assert spack_manager.check_package_exists("hdf5", upstream_install_path) is True
+            assert spack_manager.check_package_exists("netcdf-c", upstream_install_path) is True
+            assert spack_manager.check_package_exists("esmf", upstream_install_path) is False
+
+            mock_run.assert_called_once_with(
+                ['-e', '/path/to/spack-stack-1.2.3/envs/testenv', 'find', '--format', '{name}'],
+                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
+            )
+
+    def test_check_package_exists_normalizes_install_path_to_env(self, spack_manager):
+        """Test install path input is normalized to the parent env path for spack -e."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "hdf5\n"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
+            assert (
+                spack_manager.check_package_exists(
+                    "hdf5",
+                    "/path/to/spack-stack-1.2.3/envs/testenv/install/",
+                )
+                is True
+            )
+
+            mock_run.assert_called_once_with(
+                [
+                    '-e',
+                    '/path/to/spack-stack-1.2.3/envs/testenv',
+                    'find',
+                    '--format',
+                    '{name}',
+                ],
+                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
+            )
+
+    def test_check_package_exists_raises_without_upstream_path(self, spack_manager):
+        """Test package existence check fails fast when upstream path is missing."""
+        with pytest.raises(ValueError, match="upstream_env_path is required"):
+            spack_manager.check_package_exists("hdf5", "")
+
+    def test_check_package_exists_raises_when_find_fails(self, spack_manager):
+        """Test package existence check fails fast when spack find command fails."""
+        mock_result = Mock()
+        mock_result.returncode = 1
+        mock_result.stdout = ""
+        mock_result.stderr = "spack find failed"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            with pytest.raises(RuntimeError, match="Failed to list packages"):
+                spack_manager.check_package_exists("hdf5", "/path/to/spack-stack-1.2.3/envs/testenv/install/modulefiles/Core/")
     
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
@@ -2443,6 +2522,65 @@ def func(): pass
         # exception during command
         mock_run.side_effect = RuntimeError("boom")
         assert spack_manager._get_upstream_package_info(tmp_path, [{'name':'pkg'}]) == {}
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_metapackage_tie_breaker(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """Should prefer duplicate package spec matching metapackage dependency output."""
+        packages = [{
+            'name': 'hdf5',
+            'application_metapackage': 'global-workflow-env',
+        }]
+
+        all_packages_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                'hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+                'hdf5:VERSION:1.12.2:VARIANTS:~mpi:FLAGS::EXTERNAL:False\n'
+            )
+        )
+        deps_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout='hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+        )
+
+        # First call is metapackage deps query, second call is full env package query.
+        mock_run.side_effect = [deps_result, all_packages_result]
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert info['hdf5']['version'] == '1.14.0'
+        assert info['hdf5']['variants'] == '+mpi'
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test__get_upstream_package_info_current_version_overrides_metapackage_tie_breaker(
+        self, mock_run, spack_manager, tmp_path
+    ):
+        """current_version should still override version even when tie-breaker data exists."""
+        packages = [{
+            'name': 'hdf5',
+            'current_version': '1.12.2',
+            'application_metapackage': 'global-workflow-env',
+        }]
+
+        all_packages_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout=(
+                'hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+                'hdf5:VERSION:1.12.2:VARIANTS:~mpi:FLAGS::EXTERNAL:False\n'
+            )
+        )
+        deps_result = CompletedProcess(
+            args=[], returncode=0,
+            stdout='hdf5:VERSION:1.14.0:VARIANTS:+mpi:FLAGS::EXTERNAL:False\n'
+        )
+
+        mock_run.side_effect = [deps_result, all_packages_result]
+
+        info = spack_manager._get_upstream_package_info(tmp_path, packages)
+
+        assert info['hdf5']['version'] == '1.12.2'
 
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_definitions_branch(self, mock_upstream, spack_manager, tmp_path):

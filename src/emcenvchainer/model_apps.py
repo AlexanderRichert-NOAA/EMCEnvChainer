@@ -1,5 +1,6 @@
 """Model application management."""
 
+import copy
 import os
 import re
 import requests
@@ -257,12 +258,24 @@ class ModelApplication:
             return base_name.title()
 
     def get_upgradable_packages(self) -> List[Dict]:
-        """Get list of upgradable packages from the common module file.
+        """Get list of upgradable packages from configured version sources.
         
         Returns:
             List of dictionaries with package name and current version
         """
-        # Return empty list if no common module URL is defined
+        package_versions_url = self.config.get("package_versions_url")
+        if package_versions_url:
+            response = requests.get(package_versions_url, timeout=30)
+            response.raise_for_status()
+            package_versions_content = response.text
+
+            versions_format = self.config.get("package_versions_format", "shell_exports")
+            if versions_format == "shell_exports":
+                return self._parse_shell_export_versions(package_versions_content)
+
+            raise RuntimeError(f"Unsupported package_versions_format: {versions_format}")
+
+        # Return empty list if no Lua common module URL is defined
         common_module_url = self.config.get("common_module_url")
         if not common_module_url:
             return []
@@ -324,6 +337,30 @@ class ModelApplication:
         
         return unique_packages
 
+    def _parse_shell_export_versions(self, content: str) -> List[Dict]:
+        """Parse shell export package versions from files like versions/spack.ver."""
+        upgradable_packages = []
+
+        for match in re.finditer(r'^\s*export\s+([a-zA-Z0-9_]+)_ver(?:sion)?\s*=\s*"?([^"\s#]+)"?', content, re.MULTILINE):
+            package_name = match.group(1).lower().replace("_", "-")
+            version = match.group(2)
+
+            if self._is_valid_upgradable_package(package_name, version):
+                upgradable_packages.append({
+                    "name": package_name,
+                    "version": version,
+                })
+
+        # Remove duplicates by package name while preserving order.
+        seen = set()
+        unique_packages = []
+        for pkg in upgradable_packages:
+            if pkg["name"] not in seen:
+                seen.add(pkg["name"])
+                unique_packages.append(pkg)
+
+        return unique_packages
+
     def _handle_simple_load_version_pattern(self, match, module_content):
         """Handle load("package/version") patterns for upgradable packages."""
         package_name = match.group(1).lower()
@@ -371,15 +408,17 @@ class ModelApplication:
 class ModelApplicationManager:
     """Manages model applications for a platform."""
     
-    def __init__(self, platform_config: Dict, platform_name: str):
+    def __init__(self, platform_config: Dict, platform_name: str, applications_config: Optional[Dict] = None):
         """Initialize model application manager.
         
         Args:
             platform_config: Platform configuration
             platform_name: Platform name
+            applications_config: Global application configuration defaults
         """
         self.platform_config = platform_config
         self.platform_name = platform_name
+        self.applications_config = applications_config or {}
         self._applications = None
     
     @property
@@ -390,8 +429,15 @@ class ModelApplicationManager:
             app_configs = self.platform_config.get("model_applications", {})
             
             for app_name, app_config in app_configs.items():
-                app = ModelApplication(app_name, app_config, self.platform_name)
+                merged_app_config = self._merge_application_config(app_name, app_config)
+                app = ModelApplication(app_name, merged_app_config, self.platform_name)
                 self._applications.append(app)
         
         return self._applications
+
+    def _merge_application_config(self, app_name: str, platform_app_config: Dict) -> Dict:
+        """Merge global application defaults with platform-specific overrides."""
+        base_config = copy.deepcopy(self.applications_config.get(app_name, {}))
+        base_config.update(platform_app_config)
+        return base_config
 

@@ -94,6 +94,33 @@ load("cmake/3.23.1")
         assert packages == []
 
     @patch('requests.get')
+    def test_get_upgradable_packages_shell_exports_success(self, mock_get):
+        """Test parsing upgradable packages from shell export version files."""
+        mock_response = Mock()
+        mock_response.text = '''#! /usr/bin/env bash
+export hdf5_ver=1.14.3
+export netcdf_c_ver=4.9.2
+export py_pyyaml_ver=6.0.2
+export stack_python_ver=3.11.7
+'''
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+
+        config = {
+            "package_versions_url": "https://example.com/spack.ver",
+            "package_versions_format": "shell_exports",
+        }
+
+        app = ModelApplication("global_workflow", config, "ursa")
+        packages = app.get_upgradable_packages()
+
+        package_versions = {pkg['name']: pkg['version'] for pkg in packages}
+        assert package_versions['hdf5'] == "1.14.3"
+        assert package_versions['netcdf-c'] == "4.9.2"
+        assert package_versions['py-pyyaml'] == "6.0.2"
+        assert 'stack-python' not in package_versions
+
+    @patch('requests.get')
     def test_extract_install_path_success(self, mock_get):
         """Test successful extraction of install path from module file."""
         # Mock response for module file with install path
@@ -287,18 +314,24 @@ class TestModelApplicationManager:
         platform_config = {
             "model_applications": {
                 "ufs_weather_model": {
-                    "name": "UFS Weather Model",
                     "module_url_templates": ["https://example.com/ufs.lua"]
                 }
             }
         }
+        applications_config = {
+            "ufs_weather_model": {
+                "name": "UFS Weather Model",
+                "common_module_url": "https://example.com/ufs_common.lua"
+            }
+        }
         
-        manager = ModelApplicationManager(platform_config, "hera")
+        manager = ModelApplicationManager(platform_config, "hera", applications_config)
         
         assert manager.platform_config == platform_config
         assert manager.platform_name == "hera"
         assert len(manager.applications) == 1
         assert manager.applications[0].name == "ufs_weather_model"
+        assert manager.applications[0].config["common_module_url"] == "https://example.com/ufs_common.lua"
 
     @patch('requests.get')
     def test_full_workflow_with_upgradable_packages(self, mock_get):
@@ -328,18 +361,22 @@ load("hdf5/1.10.8")
         platform_config = {
             "model_applications": {
                 "ufs_weather_model": {
-                    "name": "UFS Weather Model",
                     "module_url_templates": [
                         "https://example.com/ufs_hera.intel.lua",
                         "https://example.com/ufs_hera.gnu.lua"
                     ],
-                    "common_module_url": "https://example.com/ufs_common.lua",
                     "install_path_regex": r'setenv\("UFS_WEATHER_MODEL_ROOT",\s*"([^"]+)"\)'
                 }
             }
         }
+        applications_config = {
+            "ufs_weather_model": {
+                "name": "UFS Weather Model",
+                "common_module_url": "https://example.com/ufs_common.lua"
+            }
+        }
         
-        manager = ModelApplicationManager(platform_config, "hera")
+        manager = ModelApplicationManager(platform_config, "hera", applications_config)
         app = manager.applications[0]
         
         # Test module URL choices

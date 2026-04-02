@@ -869,6 +869,7 @@ class TestEmcEnvChainerTUI:
         """Create a mock Config object."""
         config = Mock(spec=Config)
         config.get.return_value = {"test": "value"}
+        config.get_applications.return_value = {}
         return config
     
     @pytest.fixture
@@ -946,6 +947,40 @@ class TestEmcEnvChainerTUI:
         assert mock_stdscr.clear.called
         assert mock_stdscr.addstr.called
         assert mock_stdscr.refresh.called
+
+    def test_display_scrollable_text_edit_hotkey_opens_editor(self, tui_app, mock_stdscr):
+        """Test that pressing 'e' opens editor and returns to same screen."""
+        title = ["Environment created", "spack.yaml:"]
+        content = "spack:\n  specs: []"
+
+        mock_stdscr.getch.side_effect = [ord('e'), ord('\n')]
+
+        with patch.object(tui_app, '_open_file_in_editor', return_value=None) as mock_open_editor:
+            tui_app.display_scrollable_text(
+                mock_stdscr,
+                title,
+                content,
+                editable_file_path="/tmp/spack.yaml",
+            )
+
+        mock_open_editor.assert_called_once_with(mock_stdscr, "/tmp/spack.yaml")
+
+    @patch('curses.endwin')
+    @patch('curses.doupdate')
+    @patch('subprocess.run')
+    def test_open_file_in_editor_prompts_when_editor_unset(self, mock_run, mock_doupdate, mock_endwin, tui_app, mock_stdscr):
+        """Test editor prompt fallback when $EDITOR is not set."""
+        mock_run.return_value = Mock(returncode=0)
+
+        with patch.dict('os.environ', {}, clear=True):
+            with patch('builtins.input', return_value='nano'):
+                result = tui_app._open_file_in_editor(mock_stdscr, '/tmp/spack.yaml')
+
+        assert result is None
+        mock_run.assert_called_once_with(['nano', '/tmp/spack.yaml'], check=False)
+        mock_endwin.assert_called_once()
+        mock_stdscr.refresh.assert_called()
+        mock_doupdate.assert_called_once()
     
     def test_run_interactive_install_success(self, tui_app, mock_stdscr):
         """Test successful interactive install."""
@@ -2002,6 +2037,40 @@ class TestEmcEnvChainerTUI:
         # Should have only dependencies
         assert len(captured_packages) == 2
         assert all(p["type"] == "dependency" for p in captured_packages)
+
+    @patch('emcenvchainer.tui.TUIMenu')
+    def test_get_packages_from_model_app_adds_application_metapackage_metadata(self, mock_menu_class, tui_app, mock_stdscr):
+        """Test model app packages include application metapackage metadata for tie-break logic."""
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
+        mock_spack_manager = Mock()
+
+        mock_app = Mock()
+        mock_app.config = {"spack_metapackage": "global-workflow-env"}
+        mock_app.parse_dependencies.return_value = [
+            {"name": "hdf5", "version": "1.14.0"}
+        ]
+        mock_app.get_upgradable_packages.return_value = []
+
+        installation = {
+            "type": "model_application",
+            "name": "test-app",
+            "application": mock_app,
+            "selected_module_url": None
+        }
+
+        captured_packages = None
+
+        def capture_packages(stdscr, packages, app, manager, upstream_path=None, allow_additional_packages=False):
+            nonlocal captured_packages
+            captured_packages = packages
+            return []
+
+        with patch.object(tui_app, '_select_packages_with_radio_buttons', side_effect=capture_packages):
+            tui_app._get_packages_from_model_app(mock_stdscr, installation, mock_spack_manager)
+
+        assert captured_packages is not None
+        assert captured_packages[0]["application_metapackage"] == "global-workflow-env"
     
     @patch('emcenvchainer.tui.TUIMenu')
     def test_get_packages_from_model_app_cancelled(self, mock_menu_class, tui_app, mock_stdscr):
@@ -2262,6 +2331,51 @@ class TestEmcEnvChainerTUI:
         assert result is not None
         assert len(result) == 1
         assert result[0]["name"] == "netcdf-c"
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_with_radio_buttons_skips_unknown_spack_packages(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that packages not found in Spack are omitted before checklist display."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+        mock_radio.display_menu.return_value = [0]
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.pending_recipes = {}
+        mock_spack_manager.pending_git_commits = []
+        mock_spack_manager.pending_checksums = []
+        mock_spack_manager.check_package_exists.side_effect = (
+            lambda name, upstream_path: name != "external-tool"
+        )
+
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "external-tool", "current_version": "1.0.0", "type": "dependency"}
+        ]
+
+        specs = [
+            {"name": "netcdf-c", "version": "4.9.0"},
+            {"name": "external-tool", "version": "1.0.0"}
+        ]
+
+        with patch.object(tui_app, '_get_package_specification', side_effect=specs):
+            result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["name"] == "netcdf-c"
+
+        options = mock_radio.display_menu.call_args[0][0]
+        assert len(options) == 1
+        assert "netcdf-c" in options[0]
+        assert "external-tool" not in str(options)
+
+        status_lines = mock_radio.display_menu.call_args[1]["status_lines"]
+        assert status_lines is not None
+        assert any("not from spack" in line.lower() for line in status_lines)
+        assert any("skipping:" in line.lower() for line in status_lines)
+        assert any("external-tool" in line for line in status_lines)
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_partial_selection(self, mock_radio_class, tui_app, mock_stdscr):
@@ -2312,12 +2426,15 @@ class TestEmcEnvChainerTUI:
         # Verify RadioButtonMenu was created with correct title
         mock_radio_class.assert_called_once_with(mock_stdscr, "Select packages to update, modify, or lock from upstream")
     
+    @patch('emcenvchainer.tui.TUIMenu')
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, tui_app, mock_stdscr):
+    def test_select_packages_with_radio_buttons_empty_list_after_filtering(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
         """Test when all packages are filtered out."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
-        mock_radio.display_menu.return_value = []
+
+        mock_menu = Mock()
+        mock_menu_class.return_value = mock_menu
         
         mock_spack_manager = Mock()
         mock_app = Mock()
@@ -2332,9 +2449,9 @@ class TestEmcEnvChainerTUI:
         with patch.object(tui_app, '_get_package_specification', return_value=None):
             result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
         
-        # Should still work with empty options list
-        options = mock_radio.display_menu.call_args[0][0]
-        assert len(options) == 0
+        # Should return early without showing checklist
+        mock_radio.display_menu.assert_not_called()
+        mock_menu.display_info.assert_called_once()
         assert result == []
 
     @patch('emcenvchainer.tui.PackageSpecDialog')
@@ -3849,6 +3966,7 @@ class TestTUIIntegration:
         """Test that TUI components work together."""
         # Create mock objects
         mock_config = Mock(spec=Config)
+        mock_config.get_applications.return_value = {}
         mock_platform = Mock(spec=Platform)
         mock_platform.name = "test-platform"
         mock_platform.config = {"test": "config"}

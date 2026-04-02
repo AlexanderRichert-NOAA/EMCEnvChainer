@@ -11,7 +11,7 @@ import threading
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ruamel.yaml import YAML
 
@@ -37,6 +37,7 @@ class SpackManager:
         # Track packages whose recipes were retrieved from the remote Spack repository
         # during pending recipe processing for this environment creation.
         self.remote_recipes_added: List[str] = []
+        self._available_packages_cache: Dict[str, set[str]] = {}
         self.logger = None  # Will be initialized when environment directory is created
 
         assert self.spack_exe.exists(), "Spack executable not found"
@@ -910,6 +911,54 @@ class SpackManager:
 
         return version in available_versions
 
+    def check_package_exists(self, package_name: str, upstream_env_path: str) -> bool:
+        """Check if a package exists in the current Spack installation.
+
+        Args:
+            package_name: Name of the package to check
+            upstream_env_path: Upstream environment path to use with `spack -e`
+
+        Returns:
+            True if package exists, False otherwise
+        """
+        package_name = package_name.strip()
+        if not package_name:
+            return False
+
+        available_packages = self._get_available_package_names(upstream_env_path)
+        return package_name in available_packages
+
+    def _get_available_package_names(self, upstream_env_path: str) -> set[str]:
+        """Get installed package names from `spack -e <env> find --format {name}`."""
+        if not upstream_env_path:
+            raise ValueError("upstream_env_path is required for package availability checks")
+
+        normalized_env_path = upstream_env_path.rstrip("/")
+        if normalized_env_path.endswith("/install"):
+            normalized_env_path = os.path.dirname(normalized_env_path)
+
+        cache_key = normalized_env_path
+        if cache_key in self._available_packages_cache:
+            return self._available_packages_cache[cache_key]
+
+        spack_stack_dir = os.path.abspath(os.path.join(normalized_env_path, "../../"))
+        result = self._run_spack_command(
+            ['-e', normalized_env_path, 'find', '--format', '{name}'],
+            vars={"SPACK_STACK_DIR": spack_stack_dir},
+        )
+        if result.returncode != 0:
+            error_msg = "Failed to list packages with `spack find --format {name}`"
+            if result.stderr:
+                error_msg += f": {result.stderr.strip()}"
+            raise RuntimeError(error_msg)
+
+        self._available_packages_cache[cache_key] = {
+            line.strip()
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+        return self._available_packages_cache[cache_key]
+
     def _get_remote_repo_info(self, base_url: str = None) -> tuple[str, str, str]:
         """Extract Git organization, repository name, and branch from config.
         
@@ -1467,9 +1516,28 @@ class SpackManager:
             Dictionary mapping package names to their info dictionaries with 'version', 'variants', 'compiler_flags', and 'external' keys
         """
         package_info = {}
+        package_candidates: Dict[str, List[Dict[str, str]]] = {}
         
         try:
             SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
+            requested_versions = {
+                pkg["name"]: pkg["current_version"]
+                for pkg in packages
+                if pkg.get("name") and pkg.get("current_version")
+            }
+
+            metapackages = sorted({
+                str(pkg.get("application_metapackage", "")).strip()
+                for pkg in packages
+                if str(pkg.get("application_metapackage", "")).strip()
+            })
+
+            metapackage_tie_breakers: Dict[str, List[Dict[str, str]]] = {}
+            for metapackage in metapackages:
+                deps = self._get_metapackage_dependency_candidates(upstream_env_path, metapackage)
+                for dep_name, dep_candidates in deps.items():
+                    metapackage_tie_breakers.setdefault(dep_name, []).extend(dep_candidates)
+
             # Get ALL packages with version, variants, compiler flags, and external status
             result = self._run_spack_command([
                 '-e', str(upstream_env_path), 
@@ -1488,68 +1556,145 @@ class SpackManager:
                     continue
                     
                 try:
-                    # Parse the output format: name:VERSION:version:VARIANTS:variants:FLAGS:compiler_flags:EXTERNAL:external
-                    parts = line.strip().split(':VERSION:')
-                    if len(parts) != 2:
+                    parsed = self._parse_upstream_find_line(line)
+                    if not parsed:
                         continue
-                        
-                    package_name = parts[0]
-                    rest = parts[1]
-                    
-                    # Split on :VARIANTS:, :FLAGS:, and :EXTERNAL:
-                    if ':VARIANTS:' not in rest or ':FLAGS:' not in rest or ':EXTERNAL:' not in rest:
-                        continue
-                    
-                    version_part, rest = rest.split(':VARIANTS:', 1)
-                    variants_part, rest = rest.split(':FLAGS:', 1)
-                    compiler_flags_part, external_part = rest.split(':EXTERNAL:', 1)
-                    
-                    version = version_part.strip()
-                    variants = variants_part.strip()
-                    compiler_flags = compiler_flags_part.strip()
-                    is_external = external_part.strip().lower() == 'true'
+
+                    package_name = parsed["name"]
+                    version = parsed["version"]
+                    variants = parsed["variants"]
+                    compiler_flags = parsed["compiler_flags"]
+                    is_external = parsed["is_external"]
                     
                     # Skip external packages
                     if is_external:
                         if self.logger:
                             self.logger.info(f"Skipping external package from upstream: {package_name}")
                         continue
-                    
-                    # Remove patches from variants
-                    variants = re.sub(r"patches=[\w,]+", "", variants).strip()
-                    
-                    # Store info for this package
-                    package_info[package_name] = {}
-                    
-                    if variants:
-                        package_info[package_name]['variants'] = variants
-                    
-                    if compiler_flags:
-                        package_info[package_name]['compiler_flags'] = compiler_flags
-                    
-                    # Check if this package is in the packages list being updated
-                    # If so, use version from modulefile in case of multiple versions in upstream env
-                    for pkg in packages:
-                        if pkg['name'] == package_name and 'current_version' in pkg:
-                            package_info[package_name]['version'] = pkg['current_version']
-                            break
-                    else:
-                        # Not in update list, use upstream version
-                        package_info[package_name]['version'] = version
-                    
-                    if self.logger:
-                        self.logger.info(f"Found upstream info for {package_name}: version={version}, variants={variants}, compiler_flags={compiler_flags}")
+
+                    package_candidates.setdefault(package_name, []).append({
+                        "version": version,
+                        "variants": variants,
+                        "compiler_flags": compiler_flags,
+                    })
                             
                 except Exception as e:
                     if self.logger:
                         self.logger.warning(f"Error parsing package info line '{line}': {e}")
                     continue
+
+            for package_name, candidates in package_candidates.items():
+                selected = candidates[-1]
+
+                # Tie-break on metapackage dependency concrete specs, when available.
+                if len(candidates) > 1 and package_name in metapackage_tie_breakers:
+                    dep_candidates = metapackage_tie_breakers[package_name]
+                    matched = [
+                        candidate
+                        for candidate in candidates
+                        if any(
+                            candidate["version"] == dep_candidate["version"] and
+                            candidate["variants"] == dep_candidate["variants"] and
+                            candidate["compiler_flags"] == dep_candidate["compiler_flags"]
+                            for dep_candidate in dep_candidates
+                        )
+                    ]
+                    if matched:
+                        selected = matched[-1]
+                        if self.logger:
+                            self.logger.info(
+                                f"Tie-break via metapackage for {package_name}: "
+                                f"selected version={selected['version']}, variants={selected['variants']}, "
+                                f"compiler_flags={selected['compiler_flags']}"
+                            )
+
+                package_info[package_name] = {}
+
+                if selected.get("variants"):
+                    package_info[package_name]["variants"] = selected["variants"]
+
+                if selected.get("compiler_flags"):
+                    package_info[package_name]["compiler_flags"] = selected["compiler_flags"]
+
+                if package_name in requested_versions:
+                    package_info[package_name]["version"] = requested_versions[package_name]
+                else:
+                    package_info[package_name]["version"] = selected["version"]
+
+                if self.logger:
+                    self.logger.info(
+                        f"Found upstream info for {package_name}: "
+                        f"version={package_info[package_name]['version']}, "
+                        f"variants={package_info[package_name].get('variants', '')}, "
+                        f"compiler_flags={package_info[package_name].get('compiler_flags', '')}"
+                    )
                     
         except Exception as e:
             if self.logger:
                 self.logger.warning(f"Could not retrieve package info from upstream: {e}")
  
         return package_info
+
+    def _parse_upstream_find_line(self, line: str) -> Optional[Dict[str, Any]]:
+        """Parse formatted `spack find` output line for upstream package information."""
+        parts = line.strip().split(':VERSION:')
+        if len(parts) != 2:
+            return None
+
+        package_name = parts[0]
+        rest = parts[1]
+
+        if ':VARIANTS:' not in rest or ':FLAGS:' not in rest or ':EXTERNAL:' not in rest:
+            return None
+
+        version_part, rest = rest.split(':VARIANTS:', 1)
+        variants_part, rest = rest.split(':FLAGS:', 1)
+        compiler_flags_part, external_part = rest.split(':EXTERNAL:', 1)
+
+        variants = re.sub(r"patches=[\w,]+", "", variants_part.strip()).strip()
+
+        return {
+            "name": package_name,
+            "version": version_part.strip(),
+            "variants": variants,
+            "compiler_flags": compiler_flags_part.strip(),
+            "is_external": external_part.strip().lower() == 'true',
+        }
+
+    def _get_metapackage_dependency_candidates(self, upstream_env_path: Path, metapackage_name: str) -> Dict[str, List[Dict[str, str]]]:
+        """Get concrete dependency candidates for a metapackage from upstream environment."""
+        candidates: Dict[str, List[Dict[str, str]]] = {}
+
+        try:
+            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
+            result = self._run_spack_command([
+                '-e', str(upstream_env_path),
+                'find',
+                '--deps',
+                '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}:EXTERNAL:{external}',
+                metapackage_name,
+            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+
+            if result.returncode != 0 or not result.stdout.strip():
+                return candidates
+
+            for line in result.stdout.strip().split('\n'):
+                parsed = self._parse_upstream_find_line(line)
+                if not parsed or parsed["is_external"]:
+                    continue
+
+                name = parsed["name"]
+                candidates.setdefault(name, []).append({
+                    "version": parsed["version"],
+                    "variants": parsed["variants"],
+                    "compiler_flags": parsed["compiler_flags"],
+                })
+
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Could not retrieve metapackage dependencies for {metapackage_name}: {e}")
+
+        return candidates
 
     def get_upstream_package_hashes(self, upstream_env_path: Path, package_name: str) -> List[Dict[str, str]]:
         """Get available concrete spec hashes for a package from upstream environment.
