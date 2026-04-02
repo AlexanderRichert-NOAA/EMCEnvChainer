@@ -2337,7 +2337,8 @@ class TestEmcEnvChainerTUI:
 
         status_lines = mock_radio.display_menu.call_args[1]["status_lines"]
         assert status_lines is not None
-        assert any("omitted" in line.lower() for line in status_lines)
+        assert any("not from spack" in line.lower() for line in status_lines)
+        assert any("skipping:" in line.lower() for line in status_lines)
         assert any("external-tool" in line for line in status_lines)
     
     @patch('emcenvchainer.tui.RadioButtonMenu')

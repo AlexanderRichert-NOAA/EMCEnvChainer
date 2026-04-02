@@ -1572,8 +1572,7 @@ class EmcEnvChainerTUI:
         if skipped_unavailable:
             unique_missing = sorted(set(skipped_unavailable))
             status_lines = [
-                f"Warning: {len(unique_missing)} package(s) omitted (not found in Spack).",
-                "Skipped: " + ", ".join(unique_missing),
+                f"Warning: {len(unique_missing)} package(s) not from Spack. Skipping: " + ", ".join(unique_missing),
             ]
 
         if not display_packages and not allow_additional_packages:
