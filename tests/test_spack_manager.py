@@ -317,31 +317,37 @@ class TestSpackManager:
         mock_result = Mock()
         mock_result.returncode = 0
         mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
-            assert spack_manager.check_package_exists("hdf5", "/path/to/upstream/env") is True
+            assert spack_manager.check_package_exists("hdf5", upstream_install_path) is True
 
     def test_check_package_exists_not_found(self, spack_manager):
         """Test package existence check when package does not exist."""
         mock_result = Mock()
         mock_result.returncode = 0
         mock_result.stdout = "hdf5\nnetcdf-c\ncmake\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
-            assert spack_manager.check_package_exists("not-a-real-package", "/path/to/upstream/env") is False
+            assert spack_manager.check_package_exists("not-a-real-package", upstream_install_path) is False
 
     def test_check_package_exists_uses_cached_find_results(self, spack_manager):
         """Test package existence checks use cached package list from a single find call."""
         mock_result = Mock()
         mock_result.returncode = 0
         mock_result.stdout = "hdf5\nnetcdf-c\n"
+        upstream_install_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result) as mock_run:
-            assert spack_manager.check_package_exists("hdf5", "/path/to/upstream/env") is True
-            assert spack_manager.check_package_exists("netcdf-c", "/path/to/upstream/env") is True
-            assert spack_manager.check_package_exists("esmf", "/path/to/upstream/env") is False
+            assert spack_manager.check_package_exists("hdf5", upstream_install_path) is True
+            assert spack_manager.check_package_exists("netcdf-c", upstream_install_path) is True
+            assert spack_manager.check_package_exists("esmf", upstream_install_path) is False
 
-            mock_run.assert_called_once_with(['-e', '/path/to/upstream/env', 'find', '--format', '{name}'])
+            mock_run.assert_called_once_with(
+                ['-e', '/path/to/spack-stack-1.2.3/envs/testenv', 'find', '--format', '{name}'],
+                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
+            )
 
     def test_check_package_exists_normalizes_install_path_to_env(self, spack_manager):
         """Test install path input is normalized to the parent env path for spack -e."""
@@ -353,7 +359,7 @@ class TestSpackManager:
             assert (
                 spack_manager.check_package_exists(
                     "hdf5",
-                    "/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneapi-2024.2.1/install/",
+                    "/path/to/spack-stack-1.2.3/envs/testenv/install/",
                 )
                 is True
             )
@@ -361,11 +367,12 @@ class TestSpackManager:
             mock_run.assert_called_once_with(
                 [
                     '-e',
-                    '/contrib/spack-stack/spack-stack-1.9.2/envs/ue-oneapi-2024.2.1',
+                    '/path/to/spack-stack-1.2.3/envs/testenv',
                     'find',
                     '--format',
                     '{name}',
-                ]
+                ],
+                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
             )
 
     def test_check_package_exists_raises_without_upstream_path(self, spack_manager):
@@ -382,7 +389,7 @@ class TestSpackManager:
 
         with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
             with pytest.raises(RuntimeError, match="Failed to list packages"):
-                spack_manager.check_package_exists("hdf5", "/path/to/upstream/env")
+                spack_manager.check_package_exists("hdf5", "/path/to/spack-stack-1.2.3/envs/testenv/install/modulefiles/Core/")
     
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)

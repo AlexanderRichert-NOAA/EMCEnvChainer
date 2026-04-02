@@ -933,15 +933,19 @@ class SpackManager:
         if not upstream_env_path:
             raise ValueError("upstream_env_path is required for package availability checks")
 
-        # go from spack_env/install/ to spack_env/:
         normalized_env_path = upstream_env_path.rstrip("/")
-        normalized_env_path = os.path.dirname(normalized_env_path)
+        if normalized_env_path.endswith("/install"):
+            normalized_env_path = os.path.dirname(normalized_env_path)
 
         cache_key = normalized_env_path
         if cache_key in self._available_packages_cache:
             return self._available_packages_cache[cache_key]
 
-        result = self._run_spack_command(['-e', normalized_env_path, 'find', '--format', '{name}'])
+        spack_stack_dir = os.path.abspath(os.path.join(normalized_env_path, "../../"))
+        result = self._run_spack_command(
+            ['-e', normalized_env_path, 'find', '--format', '{name}'],
+            vars={"SPACK_STACK_DIR": spack_stack_dir},
+        )
         if result.returncode != 0:
             error_msg = "Failed to list packages with `spack find --format {name}`"
             if result.stderr:
