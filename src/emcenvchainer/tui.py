@@ -342,7 +342,17 @@ class PackageSpecDialog:
                 if current_field == SPACK_DEVELOP_IDX:
                     # Move up from spack_develop checkbox to last text/hash field
                     current_field = len(field_keys) - 1
-                    selected_hash_index = -1
+                    # Auto-select the appropriate hash entry when landing on the hash field
+                    if field_keys[current_field] == "upstream_hash" and available_hashes:
+                        current_hash = fields["upstream_hash"]
+                        if current_hash:
+                            selected_hash_index = next(
+                                (i for i, h in enumerate(available_hashes) if h["hash"] == current_hash), 0
+                            )
+                        else:
+                            selected_hash_index = 0
+                    else:
+                        selected_hash_index = -1
                 elif current_field > 0:
                     # Moving up between fields
                     if field_keys[current_field] == "upstream_hash":
