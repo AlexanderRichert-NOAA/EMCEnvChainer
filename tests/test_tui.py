@@ -2343,8 +2343,8 @@ class TestEmcEnvChainerTUI:
         mock_spack_manager.pending_recipes = {}
         mock_spack_manager.pending_git_commits = []
         mock_spack_manager.pending_checksums = []
-        mock_spack_manager.check_package_exists.side_effect = (
-            lambda name, upstream_path: name != "external-tool"
+        mock_spack_manager.get_canonical_package_name.side_effect = (
+            lambda name, upstream_path: None if name == "external-tool" else name
         )
 
         mock_app = Mock()

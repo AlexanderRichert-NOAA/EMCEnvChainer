@@ -1593,12 +1593,15 @@ class EmcEnvChainerTUI:
                     spack_manager, package_name, upstream_path
                 )
 
-            if not exists_cache[package_name]:
+            canonical_name = exists_cache[package_name]
+            if not canonical_name:
                 skipped_unavailable.append(package_name)
                 continue
-                
+
+            # Use the canonical Spack name (may differ in hyphen/underscore use)
+            pkg["name"] = canonical_name
             pkg_type = "📦"
-            options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
+            options.append(f"{pkg_type} {canonical_name} (v{pkg['current_version']})")
             display_packages.append({"kind": "base", "pkg": pkg})
 
         if skipped_unavailable:
@@ -1695,25 +1698,31 @@ class EmcEnvChainerTUI:
 
     def _is_package_available_for_env(
         self, spack_manager: SpackManager, package_name: str, upstream_path: str
-    ) -> bool:
-        """Check package availability, including pending custom recipe operations."""
+    ) -> Optional[str]:
+        """Check package availability, returning the canonical Spack name or None.
+
+        For packages pending custom recipe operations the input name is returned
+        unchanged.  For packages looked up in the upstream environment the
+        canonical Spack name (which may differ in hyphen/underscore use) is
+        returned so callers can use the correct name when invoking Spack.
+        """
         pending_recipes = getattr(spack_manager, "pending_recipes", {})
         if isinstance(pending_recipes, dict) and package_name in pending_recipes:
-            return True
+            return package_name
 
         pending_git_commits = getattr(spack_manager, "pending_git_commits", [])
         if isinstance(pending_git_commits, list):
             for item in pending_git_commits:
                 if isinstance(item, dict) and item.get("package_name") == package_name:
-                    return True
+                    return package_name
 
         pending_checksums = getattr(spack_manager, "pending_checksums", [])
         if isinstance(pending_checksums, list):
             for item in pending_checksums:
                 if isinstance(item, dict) and item.get("package_name") == package_name:
-                    return True
+                    return package_name
 
-        return bool(spack_manager.check_package_exists(package_name, upstream_path))
+        return spack_manager.get_canonical_package_name(package_name, upstream_path)
     
     def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[Dict]:
         """Get detailed package specification (version, variants) from user.
