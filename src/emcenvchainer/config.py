@@ -12,12 +12,27 @@ class Config:
     
     def _get_builtin_config(self) -> Dict:
         """Get built-in configuration."""
+
+
         return {
             "spack_repository": {
                 "base_url": "https://github.com/JCSDA/spack.git",
                 "packages_path": "var/spack/repos/builtin/packages",
                 "custom_repo_name": "envrepo",
                 "branch": "spack-stack-dev"
+            },
+            "applications": {
+                "ufs_weather_model": {
+                    "name": "UFS Weather Model",
+                    "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "global_workflow": {
+                    "name": "Global Workflow",
+                    "package_versions_url": "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/versions/spack.ver",
+                    "package_versions_format": "shell_exports",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                }
             },
             "platforms": {
                 "ursa": {
@@ -27,13 +42,16 @@ class Config:
                     "cpu_target": "zen3",
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.intelllvm.lua",
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_ursa.gnu.lua"
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                            ]
+                        },
+                        "global_workflow": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.ursa.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.ursa.lua"
+                            ]
                         }
                     }
                 },
@@ -43,12 +61,16 @@ class Config:
                     "hostname_patterns": [r"Orion-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_orion.intelllvm.lua",
                             ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                        },
+                        "global_workflow": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.orion.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.orion.lua"
+                            ]
+                        }
                     }
                 },
                 "hercules": {
@@ -57,13 +79,17 @@ class Config:
                     "hostname_patterns": [r"Hercules-login.*\.HPC.MsState.Edu"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hercules.intelllvm.lua",
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_hercules.gnu.lua"
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                            ]
+                        },
+                        "global_workflow": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.hercules.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.hercules.lua"
+                            ]
+                        }
                     }
                 },
                 "jet": {
@@ -72,12 +98,10 @@ class Config:
                     "hostname_patterns": [".+.jet.boulder.rdhpcs.noaa.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_jet.intel.lua",
                             ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                        }
                     }
                 },
                 "gaea-c5": {
@@ -86,12 +110,10 @@ class Config:
                     "hostname_patterns": ["gaea5[1-8].ncrc.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "UFS Weather Model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac5.intel.lua"
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                            ]
+                        }
                     }
                 },
                 "gaea-c6": {
@@ -100,12 +122,16 @@ class Config:
                     "hostname_patterns": ["gaea6[0-8].ncrc.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "ufs weather model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac6.intel.lua",
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                            ]
+                        },
+                        "global_workflow": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.gaeac6.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.gaeac6.lua"
+                            ]
+                        }
                     }
                 },
                 "acorn": {
@@ -114,12 +140,16 @@ class Config:
                     "hostname_patterns": ["a.*.wcoss2.ncep.noaa.gov"],
                     "model_applications": {
                         "ufs_weather_model": {
-                            "name": "ufs weather model",
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_acorn.intel.lua",
-                            ],
-                            "common_module_url": "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_common.lua",
-                            "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'                        }
+                            ]
+                        },
+                        "global_workflow": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.wcoss2.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.wcoss2.lua"
+                            ]
+                        }
                     }
                 },
             },
@@ -139,3 +169,7 @@ class Config:
     def get_platforms(self) -> Dict:
         """Get platform configurations."""
         return self.get("platforms", {})
+
+    def get_applications(self) -> Dict:
+        """Get application configurations."""
+        return self.get("applications", {})

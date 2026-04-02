@@ -925,7 +925,9 @@ class EmcEnvChainerTUI:
         self.config = config
         self.platform = platform
         self.model_app_manager = ModelApplicationManager(
-            platform.config, platform.name
+            platform.config,
+            platform.name,
+            self.config.get_applications(),
         )
 
     def run(self):

@@ -13,6 +13,7 @@ class TestConfig:
         config = Config()
         assert config._config is not None
         assert "platforms" in config._config
+        assert "applications" in config._config
     
     def test_builtin_platforms(self):
         """Test that built-in platforms are available."""
@@ -51,3 +52,11 @@ class TestConfig:
         # Test model applications
         model_apps = ursa_config["model_applications"]
         assert "ufs_weather_model" in model_apps
+        assert "global_workflow" in model_apps
+
+        # Test shared application configuration
+        applications = config.get_applications()
+        assert "ufs_weather_model" in applications
+        assert "common_module_url" in applications["ufs_weather_model"]
+        assert "global_workflow" in applications
+        assert "package_versions_url" in applications["global_workflow"]

@@ -869,6 +869,7 @@ class TestEmcEnvChainerTUI:
         """Create a mock Config object."""
         config = Mock(spec=Config)
         config.get.return_value = {"test": "value"}
+        config.get_applications.return_value = {}
         return config
     
     @pytest.fixture
@@ -3849,6 +3850,7 @@ class TestTUIIntegration:
         """Test that TUI components work together."""
         # Create mock objects
         mock_config = Mock(spec=Config)
+        mock_config.get_applications.return_value = {}
         mock_platform = Mock(spec=Platform)
         mock_platform.name = "test-platform"
         mock_platform.config = {"test": "config"}
