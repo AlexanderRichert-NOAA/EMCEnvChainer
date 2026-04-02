@@ -1620,7 +1620,7 @@ class EmcEnvChainerTUI:
             warning_lines = [
                 "Warning: Skipping packages not found in Spack:",
                 ", ".join(unique_missing),
-                "These packages were not added to spack.yaml.",
+                "These packages will not be added to spack.yaml.",
             ]
             TUIMenu(stdscr, "Package Validation").display_info("\n".join(warning_lines))
 
