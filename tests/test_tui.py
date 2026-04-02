@@ -472,9 +472,9 @@ class TestPackageSpecDialog:
         ([curses.KEY_DOWN], 1),
         ([curses.KEY_DOWN, curses.KEY_DOWN], 2),
         ([curses.KEY_DOWN, curses.KEY_UP], 0),
-        ([curses.KEY_DOWN, curses.KEY_DOWN, curses.KEY_DOWN], 2),  # Stay at last field
+        ([curses.KEY_DOWN, curses.KEY_DOWN, curses.KEY_DOWN, ord('\t')], 0),  # Navigate to checkbox, Tab back to start
         ([curses.KEY_UP], 0),  # Stay at first field
-        ([ord('\t'), ord('\t'), ord('\t')], 0),  # Tab wraps around
+        ([ord('\t'), ord('\t'), ord('\t'), ord('\t')], 0),  # Tab wraps around (4 fields: name/version/variants/checkbox)
     ])
     def test_get_package_spec_navigation(self, package_dialog, mock_stdscr, keys, expected_field):
         """Test keyboard navigation between package specification fields."""
@@ -2183,29 +2183,27 @@ class TestEmcEnvChainerTUI:
     @patch('emcenvchainer.tui.TUIMenu')
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_no_selection(self, mock_radio_class, mock_menu_class, tui_app, mock_stdscr):
-        """Test when user selects no packages."""
+        """Test when user selects no packages (empty set) — all base packages are returned unchanged."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
         mock_radio.display_menu.return_value = []  # Empty selection
-        
+
         mock_menu = Mock()
         mock_menu_class.return_value = mock_menu
-        
+
         mock_spack_manager = Mock()
         mock_app = Mock()
-        
+
         all_packages = [
             {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"}
         ]
-        
+
         result = tui_app._select_packages_with_radio_buttons(mock_stdscr, all_packages, mock_app, mock_spack_manager)
-        
-        # Should return empty list
-        assert result == []
-        
-        # Should display info message
-        mock_menu.display_info.assert_called_once()
-        assert "No packages were selected" in str(mock_menu.display_info.call_args)
+
+        # Empty selection means "no explicit updates" — all base packages pass through unchanged.
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["current_version"] == "4.9.0"
     
     @patch('emcenvchainer.tui.RadioButtonMenu')
     def test_select_packages_with_radio_buttons_filters_excluded_packages(self, mock_radio_class, tui_app, mock_stdscr):
