@@ -1659,12 +1659,8 @@ class EmcEnvChainerTUI:
             return None
         
         if not selected_indices:
-            if additional_packages:
-                return additional_packages
-
-            menu = TUIMenu(stdscr, "No Packages Selected")
-            menu.display_info("No packages were selected. The environment will be created without additional packages.")
-            return []
+            all_base_packages = [entry["pkg"] for entry in display_packages if entry["kind"] == "base"]
+            return all_base_packages + additional_packages
         
         # Get detailed specifications for selected packages
         selected_packages = []
