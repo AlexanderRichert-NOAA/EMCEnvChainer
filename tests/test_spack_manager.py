@@ -397,6 +397,25 @@ class TestSpackManager:
             # Non-existent package still returns False
             assert spack_manager.check_package_exists("esmf", upstream_install_path) is False
 
+    def test_get_canonical_package_name_alias_groups(self, spack_manager):
+        """Test that known package aliases resolve to whichever form is in Spack."""
+        mock_result = Mock()
+        mock_result.returncode = 0
+        # Spack env has gsi-ncdiag (not ncdiag) and ecmwf-atlas (not atlas)
+        mock_result.stdout = "gsi-ncdiag\necmwf-atlas\nhdf5\n"
+        upstream_path = "/path/to/spack-stack-1.2.3/envs/testenv/install/"
+
+        with patch.object(spack_manager, '_run_spack_command', return_value=mock_result):
+            # Module file uses short alias -> resolved to Spack canonical name
+            assert spack_manager.get_canonical_package_name("ncdiag", upstream_path) == "gsi-ncdiag"
+            assert spack_manager.get_canonical_package_name("atlas", upstream_path) == "ecmwf-atlas"
+            # Spack canonical name still resolves to itself
+            assert spack_manager.get_canonical_package_name("gsi-ncdiag", upstream_path) == "gsi-ncdiag"
+            assert spack_manager.get_canonical_package_name("ecmwf-atlas", upstream_path) == "ecmwf-atlas"
+            # Unrelated packages unaffected
+            assert spack_manager.get_canonical_package_name("hdf5", upstream_path) == "hdf5"
+            assert spack_manager.get_canonical_package_name("esmf", upstream_path) is None
+
     def test_check_package_exists_raises_when_find_fails(self, spack_manager):
         """Test package existence check fails fast when spack find command fails."""
         mock_result = Mock()

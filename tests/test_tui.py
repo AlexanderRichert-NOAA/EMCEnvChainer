@@ -2215,6 +2215,7 @@ class TestEmcEnvChainerTUI:
         mock_radio.display_menu.return_value = []
         
         mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
         mock_app = Mock()
         
         all_packages = [
@@ -2251,6 +2252,7 @@ class TestEmcEnvChainerTUI:
         mock_radio.display_menu.return_value = []
         
         mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
         mock_app = Mock()
         
         all_packages = [
@@ -2472,6 +2474,7 @@ class TestEmcEnvChainerTUI:
         mock_radio.display_menu.side_effect = _display_menu_with_add
 
         mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
         mock_app = Mock()
 
         all_packages = [
