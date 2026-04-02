@@ -258,7 +258,7 @@ class ModelApplication:
         # Pattern handlers for upgradable packages
         pattern_handlers = {
             'ufs_table': {
-                'pattern': r'\{\["([^"]+)"\]\s*=\s*"([^"]+)"\}',
+                'pattern': r'\{\["([^"]+)"\]\s*=\s*"([^"]+)"\s*\}',
                 'handler': self._handle_ufs_table_pattern
             },
             'load_with_version': {
