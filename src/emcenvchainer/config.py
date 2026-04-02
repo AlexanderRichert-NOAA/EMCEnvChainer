@@ -34,6 +34,12 @@ class Config:
                     "package_versions_url": "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/versions/spack.ver",
                     "package_versions_format": "shell_exports",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "gsi": {
+                    "name": "GSI",
+                    "spack_metapackage": "gsi-env",
+                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_common.lua",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 }
             },
             "platforms": {
@@ -54,6 +60,11 @@ class Config:
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.ursa.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.ursa.lua"
                             ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_ursa.intel.lua"
+                            ]
                         }
                     }
                 },
@@ -71,6 +82,11 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.orion.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.orion.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_orion.intel.lua"
                             ]
                         }
                     }
@@ -90,6 +106,11 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.hercules.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.hercules.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_hercules.intel.lua"
                             ]
                         }
                     }
@@ -132,6 +153,11 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.gaeac6.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.gaeac6.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_gaeac6.intel.lua"
                             ]
                         }
                     }
