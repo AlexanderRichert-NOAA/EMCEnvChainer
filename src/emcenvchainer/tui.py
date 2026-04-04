@@ -312,10 +312,6 @@ class PackageSpecDialog:
                 # Space toggles the spack_develop checkbox when it is focused
                 spack_develop = not spack_develop
             elif key in [curses.KEY_ENTER, ord('\n'), ord('\r')]:
-                # Enter on spack_develop checkbox toggles it instead of submitting
-                if current_field == SPACK_DEVELOP_IDX:
-                    spack_develop = not spack_develop
-                    continue
                 if not fields["name"].strip():
                     self._show_error("Package name is required!")
                     continue
