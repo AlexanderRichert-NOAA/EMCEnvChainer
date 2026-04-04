@@ -41,9 +41,9 @@ class TestModelApplication:
         choices = app.get_module_url_choices()
         
         assert len(choices) == 2
-        assert choices[0]['name'] == "hera (INTEL)"
+        assert choices[0]['name'] == "hera.intel.lua"
         assert choices[0]['url'] == "https://example.com/hera.intel.lua"
-        assert choices[1]['name'] == "hera (GNU)"
+        assert choices[1]['name'] == "hera.gnu.lua"
         assert choices[1]['url'] == "https://example.com/hera.gnu.lua"
     
     @patch('requests.get')
@@ -223,6 +223,23 @@ load("netcdf/4.9.2")
         
         assert result == ('netcdf', '4.9.2')
 
+    def test_ufs_table_pattern_matches_trailing_spaces(self):
+        """Test that ufs_table pattern matches entries with trailing spaces before '}'."""
+        import re
+        from emcenvchainer.model_apps import ModelApplication
+        config = {"common_module_url": "http://example.com/common.lua"}
+        app = ModelApplication("test_app", config, "test_platform")
+        pattern = r'\{\["([^"]+)"\]\s*=\s*"([^"]+)"\s*\}'
+        content = (
+            '{["jasper"]          = "2.0.32" },\n'
+            '{["zlib"]            = "1.2.13"  },\n'
+            '{["crtm"]            = "2.4.0.1"},\n'
+        )
+        matches = re.findall(pattern, content)
+        assert ('jasper', '2.0.32') in matches
+        assert ('zlib', '1.2.13') in matches
+        assert ('crtm', '2.4.0.1') in matches
+
     def test_handle_pathjoin_upgradable_pattern(self):
         """Test _handle_pathjoin_upgradable_pattern method."""
         config = {"module_url_templates": ["http://example.com/test.lua"]}
@@ -382,8 +399,8 @@ load("hdf5/1.10.8")
         # Test module URL choices
         choices = app.get_module_url_choices()
         assert len(choices) == 2
-        assert choices[0]['name'] == "ufs_hera (INTEL)"
-        assert choices[1]['name'] == "ufs_hera (GNU)"
+        assert choices[0]['name'] == "ufs_hera.intel.lua"
+        assert choices[1]['name'] == "ufs_hera.gnu.lua"
         
         # Test getting upgradable packages
         upgradable_packages = app.get_upgradable_packages()

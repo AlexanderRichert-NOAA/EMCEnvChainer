@@ -200,24 +200,17 @@ class PackageSpecDialog:
             "name": package_name,
             "version": default_version,
             "variants": "",
-            "upstream_hash": ""
         }
-        
-        # Available upstream hashes for selection
-        available_hashes = []
         
         # Track if validation has been performed for this dialog session
         validation_performed = False
         # Track the last validated package spec to detect changes
         last_validated_spec = None
-        # Track package name to detect changes and re-query hashes
-        last_package_name = ""
         
-        field_names = ["Package Name", "Version", "Variants", "Upstream Hash (lock in upstream package; optional)"]
+        field_names = ["Package Name", "Version", "Variants"]
         field_keys = list(fields.keys())
         SPACK_DEVELOP_IDX = len(field_keys)  # Index for the spack_develop checkbox
         current_field = 0
-        selected_hash_index = -1  # Track which hash is selected (-1 = none selected)
         spack_develop = False  # Whether to run 'spack develop' for this package
         
         # Track cursor position for each field (only for actual text fields)
@@ -227,19 +220,6 @@ class PackageSpecDialog:
         while True:
             self.stdscr.clear()
             height, width = self.stdscr.getmaxyx()
-            
-            # Check if package name has changed and re-query hashes if needed
-            current_package_name = fields["name"].strip()
-            if current_package_name != last_package_name:
-                last_package_name = current_package_name
-                if current_package_name:
-                    available_hashes = self._query_upstream_hashes(current_package_name)
-                else:
-                    available_hashes = []
-                # Clear upstream_hash field if package name changed
-                if fields["upstream_hash"]:
-                    fields["upstream_hash"] = ""
-                    cursors[field_keys.index("upstream_hash")] = 0
             
             # Title
             title = "Package Specification"
@@ -251,24 +231,6 @@ class PackageSpecDialog:
             final_cursor_x = 0
             for i, (field_key, field_label) in enumerate(zip(field_keys, field_names)):
                 y = 5 + i * 2
-                
-                # Special rendering for upstream_hash field - show as list
-                if field_key == "upstream_hash" and available_hashes:
-                    self.stdscr.addstr(y, 4, f"{field_label}:", curses.A_BOLD if i == current_field else curses.A_NORMAL)
-                    
-                    # Display hash list below
-                    list_start_y = y + 1
-                    
-                    for idx, h in enumerate(available_hashes[:5]):  # Show first 5
-                        display_line = f"{h['hash']} - {h['spec'][:width-30]}"
-                        self.stdscr.addstr(list_start_y + idx, 6, display_line,
-                                         curses.A_REVERSE if i == current_field and selected_hash_index == idx else curses.A_NORMAL)
-                    
-                    if len(available_hashes) > 5:
-                        self.stdscr.addstr(list_start_y + 5, 6, f"... and {len(available_hashes) - 5} more (use ↑/↓)", curses.A_DIM)
-                    
-                    # Skip the normal input box rendering
-                    continue
                 
                 # Regular text field with label and input box
                 self.stdscr.addstr(y, 4, f"{field_label}:")
@@ -307,10 +269,7 @@ class PackageSpecDialog:
                     final_cursor_x = box_x + 1 + display_cursor
             
             # Render spack_develop checkbox below the other fields
-            hash_extra = 0
-            if available_hashes:
-                hash_extra = min(len(available_hashes), 5) + (1 if len(available_hashes) > 5 else 0)
-            spack_develop_y = 5 + len(field_keys) * 2 + hash_extra + 1
+            spack_develop_y = 5 + len(field_keys) * 2 + 1
             sd_checkbox = "[X]" if spack_develop else "[ ]"
             sd_label = "Develop with persistent source code directory ('spack develop')"
             if current_field == SPACK_DEVELOP_IDX:
@@ -318,16 +277,16 @@ class PackageSpecDialog:
             else:
                 self.stdscr.addstr(spack_develop_y, 4, f"{sd_checkbox} {sd_label}")
             
-            # Position cursor and make it visible (only for non-hash, non-checkbox fields)
-            if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] != "upstream_hash":
+            # Position cursor and make it visible (only for non-checkbox fields)
+            if current_field < SPACK_DEVELOP_IDX:
                 curses.curs_set(1)  # Show cursor
                 self.stdscr.move(final_cursor_y, final_cursor_x)
             else:
-                curses.curs_set(0)  # Hide cursor when on hash or checkbox field
+                curses.curs_set(0)  # Hide cursor when on checkbox field
             
             # Instructions
             instructions = [
-                "Use ↑/↓ or Tab to navigate. On hash field, ↑/↓ selects from list.",
+                "Use ↑/↓ or Tab to navigate fields.",
                 "Space to toggle checkbox. Type to edit text fields. Enter to continue."
             ]
             for i, instruction in enumerate(instructions):
@@ -340,68 +299,15 @@ class PackageSpecDialog:
             
             if key == curses.KEY_UP:
                 if current_field == SPACK_DEVELOP_IDX:
-                    # Move up from spack_develop checkbox to last text/hash field
                     current_field = len(field_keys) - 1
-                    selected_hash_index = -1
                 elif current_field > 0:
-                    # Moving up between fields
-                    if field_keys[current_field] == "upstream_hash":
-                        # Apply selected hash before leaving
-                        if available_hashes and selected_hash_index >= 0:
-                            fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
-                        else:
-                            fields["upstream_hash"] = ""
                     current_field -= 1
-                    selected_hash_index = -1  # Reset hash selection
-                elif current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                    # Navigate within hash list
-                    if selected_hash_index > 0:
-                        selected_hash_index -= 1
-                    else:
-                        # At top of list, move to previous field
-                        if current_field > 0:
-                            if selected_hash_index >= 0:
-                                fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
-                            else:
-                                fields["upstream_hash"] = ""
-                            current_field -= 1
-                            selected_hash_index = -1
             elif key == curses.KEY_DOWN:
-                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                    # Navigate within hash list
-                    if selected_hash_index < len(available_hashes) - 1:
-                        selected_hash_index += 1
-                    else:
-                        # At bottom of hash list, move to next field
-                        if available_hashes and selected_hash_index >= 0:
-                            fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
-                        else:
-                            fields["upstream_hash"] = ""
-                        if current_field < SPACK_DEVELOP_IDX:
-                            current_field += 1
-                            selected_hash_index = -1
-                elif current_field < SPACK_DEVELOP_IDX:
-                    # Moving down between fields
+                if current_field < SPACK_DEVELOP_IDX:
                     current_field += 1
-                    # Auto-select first hash if entering hash field
-                    if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                        selected_hash_index = 0
-                    else:
-                        selected_hash_index = -1
             elif key == ord('\t'):
                 # Tab moves to next field (cycles through all including spack_develop)
-                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                    # Apply selected hash before leaving
-                    if selected_hash_index >= 0:
-                        fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
-                    else:
-                        fields["upstream_hash"] = ""
                 current_field = (current_field + 1) % (SPACK_DEVELOP_IDX + 1)
-                # Auto-select first hash if entering hash field
-                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                    selected_hash_index = 0
-                else:
-                    selected_hash_index = -1
             elif key == ord(' ') and current_field == SPACK_DEVELOP_IDX:
                 # Space toggles the spack_develop checkbox when it is focused
                 spack_develop = not spack_develop
@@ -413,13 +319,6 @@ class PackageSpecDialog:
                 if not fields["name"].strip():
                     self._show_error("Package name is required!")
                     continue
-                
-                # Apply selected hash if on hash field
-                if current_field < SPACK_DEVELOP_IDX and field_keys[current_field] == "upstream_hash" and available_hashes:
-                    if selected_hash_index >= 0:
-                        fields["upstream_hash"] = available_hashes[selected_hash_index]["hash"]
-                    else:
-                        fields["upstream_hash"] = ""
                 
                 package_name = fields["name"].strip()
                 assert package_name, "Package name cannot be empty"
@@ -1150,7 +1049,7 @@ class EmcEnvChainerTUI:
         
         # Get packages and SpackManager
         packages, spack_manager = self._get_package_specifications_with_manager(stdscr, selected_installation)
-        if not packages or not spack_manager:
+        if packages is None or spack_manager is None:
             return
         
         self._create_environment(stdscr, selected_installation, packages, spack_manager, env_name)
@@ -1593,12 +1492,15 @@ class EmcEnvChainerTUI:
                     spack_manager, package_name, upstream_path
                 )
 
-            if not exists_cache[package_name]:
+            canonical_name = exists_cache[package_name]
+            if not canonical_name:
                 skipped_unavailable.append(package_name)
                 continue
-                
+
+            # Use the canonical Spack name (may differ in hyphen/underscore use)
+            pkg["name"] = canonical_name
             pkg_type = "📦"
-            options.append(f"{pkg_type} {pkg['name']} (v{pkg['current_version']})")
+            options.append(f"{pkg_type} {canonical_name} (v{pkg['current_version']})")
             display_packages.append({"kind": "base", "pkg": pkg})
 
         if skipped_unavailable:
@@ -1617,9 +1519,80 @@ class EmcEnvChainerTUI:
 
         radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
 
+        # --- Upstream lock state infrastructure ---
+        # Compute upstream env path (parent of 'install' directory if present)
+        _upstream_env_path = None
+        if upstream_path and spack_manager:
+            _up_obj = Path(upstream_path)
+            _upstream_env_path = _up_obj.parent if _up_obj.name == 'install' else _up_obj
+
+        locks: Dict[int, Optional[Dict]] = {}      # pkg idx -> {'hash': ..., 'spec': ...} or None
+        _hashes_cache: Dict[int, List[Dict]] = {}  # lazy per-package hash lists
+        base_option_labels: List[str] = list(options)  # snapshot without lock suffix
+
+        def _fetch_hashes_for(idx: int) -> List[Dict]:
+            if idx in _hashes_cache:
+                return _hashes_cache[idx]
+            if (
+                _upstream_env_path is None
+                or idx >= len(display_packages)
+                or display_packages[idx]["kind"] != "base"
+            ):
+                _hashes_cache[idx] = []
+                return []
+            pkg_name = display_packages[idx]["pkg"]["name"]
+            try:
+                result = spack_manager.get_upstream_package_hashes(_upstream_env_path, pkg_name)
+            except Exception:
+                result = []
+            _hashes_cache[idx] = result
+            return result
+
+        def _build_label(idx: int) -> str:
+            base = base_option_labels[idx] if idx < len(base_option_labels) else options[idx]
+            lock = locks.get(idx)
+            if lock:
+                spec = lock['spec']
+                if len(spec) > 80:
+                    spec = spec[:77] + "..."
+                return f"{base} [🔒 {spec} /{lock['hash']}]"
+            return base
+
+        def _toggle_lock_current():
+            idx = radio_menu.current_row
+            hashes = _fetch_hashes_for(idx)
+            if not hashes:
+                return
+            current = locks.get(idx)
+            if current is None:
+                locks[idx] = hashes[0]
+            else:
+                try:
+                    pos = next(i for i, h in enumerate(hashes) if h['hash'] == current['hash'])
+                    nxt = pos + 1
+                    locks[idx] = hashes[nxt] if nxt < len(hashes) else None
+                except StopIteration:
+                    locks[idx] = None
+            options[idx] = _build_label(idx)
+
+        def _lock_all_packages():
+            for i in range(len(display_packages)):
+                if display_packages[i]["kind"] == "base":
+                    hashes = _fetch_hashes_for(i)
+                    if hashes:
+                        locks[i] = hashes[0]
+                        options[i] = _build_label(i)
+        # --- End lock state infrastructure ---
+
         additional_packages: List[Dict] = []
-        extra_instructions: List[str] = []
-        key_actions: Dict[int, Any] = {}
+        extra_instructions: List[str] = [
+            "'l' to toggle upstream lock for highlighted package",
+            "'L' to lock all packages to their first upstream spec",
+        ]
+        key_actions: Dict[int, Any] = {
+            ord('l'): _toggle_lock_current,
+            ord('L'): _lock_all_packages,
+        }
 
         if allow_additional_packages:
             dialog = PackageSpecDialog(stdscr, spack_manager, upstream_path)
@@ -1633,17 +1606,15 @@ class EmcEnvChainerTUI:
                         pkg_label += f"@{pkg_spec['version']}"
                     if pkg_spec.get("variants"):
                         pkg_label += f" {pkg_spec['variants']}"
+                    new_idx = len(options)
                     options.append(f"📦 {pkg_label} (additional)")
+                    base_option_labels.append(options[new_idx])
                     display_packages.append({"kind": "additional", "pkg": pkg_spec})
-                    radio_menu.selected_items.add(len(options) - 1)
+                    radio_menu.selected_items.add(new_idx)
 
-            extra_instructions = [
-                "'+' to add a package",
-            ]
-            key_actions = {
-                ord('+'): _add_package,
-            }
-        
+            extra_instructions.insert(0, "'+' to add a package")
+            key_actions[ord('+')] = _add_package
+
         # Show radio button selection menu
         selected_indices = radio_menu.display_menu(
             options,
@@ -1656,13 +1627,15 @@ class EmcEnvChainerTUI:
             return None
         
         if not selected_indices:
-            if additional_packages:
-                return additional_packages
+            result = []
+            for i, entry in enumerate(display_packages):
+                if entry["kind"] == "base":
+                    pkg = entry["pkg"]
+                    if locks.get(i):
+                        pkg = {**pkg, "upstream_hash": locks[i]["hash"]}
+                    result.append(pkg)
+            return result + additional_packages
 
-            menu = TUIMenu(stdscr, "No Packages Selected")
-            menu.display_info("No packages were selected. The environment will be created without additional packages.")
-            return []
-        
         # Get detailed specifications for selected packages
         selected_packages = []
         for idx in selected_indices:
@@ -1677,15 +1650,19 @@ class EmcEnvChainerTUI:
                 # Get package specification with version and variants
                 spec = self._get_package_specification(stdscr, pkg, spack_manager, upstream_path)
                 if spec:
+                    # Apply lock set in the radio button screen (overrides any hash from dialog)
+                    if locks.get(idx):
+                        spec["upstream_hash"] = locks[idx]["hash"]
                     metapackage = pkg.get("application_metapackage")
                     if metapackage:
                         spec["application_metapackage"] = metapackage
                     selected_packages.append(spec)
 
         # Preserve existing behavior: unselected base packages are still included unchanged.
+        # Apply locks to unselected packages as well.
         selected_packages.extend(
             [
-                entry["pkg"]
+                {**entry["pkg"], "upstream_hash": locks[idx]["hash"]} if locks.get(idx) else entry["pkg"]
                 for idx, entry in enumerate(display_packages)
                 if entry["kind"] == "base" and idx not in selected_indices
             ]
@@ -1695,25 +1672,31 @@ class EmcEnvChainerTUI:
 
     def _is_package_available_for_env(
         self, spack_manager: SpackManager, package_name: str, upstream_path: str
-    ) -> bool:
-        """Check package availability, including pending custom recipe operations."""
+    ) -> Optional[str]:
+        """Check package availability, returning the canonical Spack name or None.
+
+        For packages pending custom recipe operations the input name is returned
+        unchanged.  For packages looked up in the upstream environment the
+        canonical Spack name (which may differ in hyphen/underscore use) is
+        returned so callers can use the correct name when invoking Spack.
+        """
         pending_recipes = getattr(spack_manager, "pending_recipes", {})
         if isinstance(pending_recipes, dict) and package_name in pending_recipes:
-            return True
+            return package_name
 
         pending_git_commits = getattr(spack_manager, "pending_git_commits", [])
         if isinstance(pending_git_commits, list):
             for item in pending_git_commits:
                 if isinstance(item, dict) and item.get("package_name") == package_name:
-                    return True
+                    return package_name
 
         pending_checksums = getattr(spack_manager, "pending_checksums", [])
         if isinstance(pending_checksums, list):
             for item in pending_checksums:
                 if isinstance(item, dict) and item.get("package_name") == package_name:
-                    return True
+                    return package_name
 
-        return bool(spack_manager.check_package_exists(package_name, upstream_path))
+        return spack_manager.get_canonical_package_name(package_name, upstream_path)
     
     def _get_package_specification(self, stdscr, pkg: Dict, spack_manager: SpackManager, upstream_path: str = None) -> Optional[Dict]:
         """Get detailed package specification (version, variants) from user.

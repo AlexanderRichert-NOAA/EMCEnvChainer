@@ -17,6 +17,14 @@ from ruamel.yaml import YAML
 
 from .config import Config
 
+# Groups of package names that are considered equivalent between model module
+# files and Spack. Any name in a group will resolve to whichever member is
+# present in the upstream Spack environment.
+_PACKAGE_NAME_ALIAS_GROUPS: List[frozenset] = [
+    frozenset({"ncdiag", "gsi-ncdiag"}),
+    frozenset({"atlas", "ecmwf-atlas"}),
+]
+
 
 class SpackManager:
     """Manages Spack operations and environment creation."""
@@ -944,12 +952,39 @@ class SpackManager:
         Returns:
             True if package exists, False otherwise
         """
+        return self.get_canonical_package_name(package_name, upstream_env_path) is not None
+
+    def get_canonical_package_name(self, package_name: str, upstream_env_path: str) -> Optional[str]:
+        """Return the canonical Spack package name, resolving hyphen/underscore variants.
+
+        Args:
+            package_name: Name of the package to look up (may use hyphens or underscores)
+            upstream_env_path: Upstream environment path to use with `spack -e`
+
+        Returns:
+            The name as it appears in Spack (canonical form), or None if not found
+        """
         package_name = package_name.strip()
         if not package_name:
-            return False
+            return None
 
         available_packages = self._get_available_package_names(upstream_env_path)
-        return package_name in available_packages
+        if package_name in available_packages:
+            return package_name
+        # Spack normalises hyphens and underscores interchangeably; try both forms.
+        alternate_name = package_name.replace("-", "_") if "-" in package_name else package_name.replace("_", "-")
+        if alternate_name in available_packages:
+            return alternate_name
+        # Try known alias groups: any member of the same group may be the Spack name.
+        for group in _PACKAGE_NAME_ALIAS_GROUPS:
+            if package_name in group or alternate_name in group:
+                for alias in group:
+                    if alias in available_packages:
+                        return alias
+                    alias_alt = alias.replace("-", "_") if "-" in alias else alias.replace("_", "-")
+                    if alias_alt in available_packages:
+                        return alias_alt
+        return None
 
     def _get_available_package_names(self, upstream_env_path: str) -> set[str]:
         """Get installed package names from `spack -e <env> find --format {name}`."""

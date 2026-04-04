@@ -4,7 +4,7 @@
 
 The EMCEnvChainer utility allows NOAA developers to build their own copies of packages (i.e., model app dependencies) on top of existing spack-stack installations. It does so using Spack's environment chaining feature. Only the specifically requested package(s) and corresponding dependents need to be rebuilt, therefore as much of the existing installation as possible is reused, thereby reducing overall installation time and minimizing configuration differences (versions, build options) between the base (upstream) and user-built software stacks.
 
-The utility will automatically identify which platform (RDHPCS systems + Acorn) it is running on, and identify available base spack-stack installations, including the ones associated with the UFS Weather Model head of develop.
+The utility will automatically identify which platform (RDHPCS systems + Acorn) it is running on, and identify available base spack-stack installations, including the ones associated with supported model applications at the head of their respective default branches (i.e., "develop").
 
 ## Installation & basic usage
 
@@ -13,7 +13,7 @@ To use the utility, install it, invoke the `emcenvchainer` command, and follow t
 pip3 install emcenvchainer
 emcenvchainer
 ```
-You may choose a spack-stack installation and select individual packages to incorporate into your installation, or you may choose a model application to automatically obtain the list of dependencies, then choose whether to customize the version/build options for each. Currently only UFS Weather Model (head of develop) is supported. After the installation is complete, instructions are provided for accessing the stack.
+You may choose a spack-stack installation and select individual packages to incorporate into your installation, or you may choose a model application to automatically obtain the list of dependencies based on the head of its default branch, then choose whether to customize the version/build options for each. The model applications currently supported are: UFS Weather Model, Global Workflow, GSI, UPP, UFS_UTILS, and AQM-utils. After the installation is complete, instructions are provided for accessing the stack.
 
 > [!NOTE]
 > **The Lmod module files and spack-stack metamodules for accessing the base and user packages are installed in a single location** in the user's space. Therefore, when setting `$MODULEPATH` for your application, it should *not* include the original spack-stack installation, only the one associated with the newly built Spack environment.
@@ -30,11 +30,11 @@ SITE_OVERRIDE=ursa emcenvchainer
 
 ### *Spack won't use some of the existing packages*
 
-Occasionally Spack will not use existing packages from the upstream environment even when it ostensibly should. For instance, the concretization output may show that it intends to perform a fresh build of HDF5 and its dependents even though we are only requesting a new version of Scotch, which is not in any way a dependency of HDF5. There are deep internal Spack reasons for this, usually related to spuriously differing package hashes.
+Occasionally Spack will not use existing packages from the upstream environment even when it ostensibly should. For instance, the concretization output may show that it intends to perform a fresh build of HDF5 and its dependents even though we are only requesting a new version of Scotch, which is not in any way a dependency or dependent of HDF5. There are deep internal Spack reasons for this, usually related to spuriously differing package hashes or obscure concretizer errors.
 
-This problem can be straightforwardly worked around if you are using the model app-based approach to configuring your installation (i.e., selecting a model-based configuration on the "Select Installation Source" screen). In that case, identify any such problematic packages that should not be rebuilt (HDF5, in the aforementioned example), select them from the checklist, and at the bottom of the "Package Specification" screen, select one of the existing package configurations. There is little risk to doing this to any and all packages, as long as they are not packages that need building, i.e., package versions you have requested or dependents of packages you have selected (i.e., if you wish to build a new HDF5 version, you cannot reuse the existing NetCDF packages because they depend on HDF5). The only case where this will certainly fail is if it leads to version conflicts. If the versions and build options are otherwise acceptable, you may of course choose to allow Spack to rebuild even some packages that do not need rebuilding.
+This problem can be straightforwardly worked around if you are using the model app-based approach to configuring your installation. On the package selection screen, packages may be **locked** to their existing upstream spec, that is, Spack will be forced to point to the upstream package rather than reconfiguring and rebuilding it. To lock the a package, highlight it and press `l`; the package label will update to show a 🔒 indicator with the spec and hash being used. Press `l` again to cycle to subsequent available upstream specs if there is more than one, and pressing 'l' again after that will unlock the package. To lock all packages to their first available upstream spec, press `L`, then use `l` to unlock only those packages you wish to allow Spack to reconfigure and rebuild.
 
-If you are selecting individual packages for inclusion from the upstream environment (i.e., you selected a spack-stack environment directly on the "Select Installation Source" screen), then when you add a package that you do not wish to rebuild, add "/hash123" to the "Variants" field on the "Package Specification" screen, where you have determined the package hash "/hash123" in the base (upstream) spack-stack installation.
+There is little risk to locking any and all packages, as long as they are not packages that need building (i.e., package versions you have requested or dependents of packages you have selected to reconfigure). If locking packages leads to hard conflicts, the concretization will fail.
 
 ### *I want to modify the Spack environment before installing*
 
@@ -75,4 +75,6 @@ qsub -A MYACCT-DEV -q dev -l walltime=01:00:00,select=1:ncpus=6 -I -V -- $(which
 
 ### *I want to make my own source code modifications to one or more packages*
 
-This functionality is not directly available with this utility. To achieve this effect, follow the above instructions under "I want to modify the Spack environment before installing" (i.e., halt the utility after spack.yaml is generated but prior to concretization), and modify the environment by running `spack develop mypkg@develop`, then run the concretization and installation steps as shown. See also the [Spack documentation](https://spack-tutorial.readthedocs.io/en/latest/tutorial_developer_workflows.html#development-iteration-cycles) for details on pointing Spack to a local, modified copy of a package's source code.
+On the "Package Specification" screen for any package, you can check the **"Develop with persistent source code directory ('spack develop')"** checkbox. This will automatically run `spack develop` for the package after the environment is configured, creating a local source directory that you can modify before building.
+
+See the [Spack documentation](https://spack-tutorial.readthedocs.io/en/latest/tutorial_developer_workflows.html#development-iteration-cycles) for details on iterative code development through the use of `spack develop`.

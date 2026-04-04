@@ -214,48 +214,15 @@ class ModelApplication:
                 not package_name.startswith("stack"))
 
     def get_module_url_choices(self) -> List[Dict]:
-        """Get module URL choices with user-friendly names.
+        """Get module URL choices keyed by filename.
         
         Returns:
-            List of dicts with 'name' and 'url' keys
+            List of dicts with 'name' (filename) and 'url' keys
         """
-        choices = []
-        urls = self.module_urls
-        
-        for url in urls:
-            # Extract compiler/variant info from URL
-            name = self._extract_url_description(url)
-            choices.append({
-                'name': name,
-                'url': url
-            })
-        
-        return choices
-    
-    def _extract_url_description(self, url: str) -> str:
-        """Extract a user-friendly description from a module URL.
-        
-        Args:
-            url: Module file URL
-            
-        Returns:
-            User-friendly description
-        """
-        # Extract filename from URL
-        filename = urlparse(url).path.split('/')[-1]
-        
-        # Remove .lua extension
-        base_name = filename.replace('.lua', '')
-        
-        # Extract platform and compiler info
-        # Format is typically: platform.compiler.lua
-        parts = base_name.split('.')
-        if len(parts) >= 2:
-            platform = parts[0]
-            compiler = parts[1] if len(parts) > 1 else "default"
-            return f"{platform} ({compiler.upper()})"
-        else:
-            return base_name.title()
+        return [
+            {'name': urlparse(url).path.split('/')[-1], 'url': url}
+            for url in self.module_urls
+        ]
 
     def get_upgradable_packages(self) -> List[Dict]:
         """Get list of upgradable packages from configured version sources.
@@ -291,7 +258,7 @@ class ModelApplication:
         # Pattern handlers for upgradable packages
         pattern_handlers = {
             'ufs_table': {
-                'pattern': r'\{\["([^"]+)"\]\s*=\s*"([^"]+)"\}',
+                'pattern': r'\{\["([^"]+)"\]\s*=\s*"([^"]+)"\s*\}',
                 'handler': self._handle_ufs_table_pattern
             },
             'load_with_version': {

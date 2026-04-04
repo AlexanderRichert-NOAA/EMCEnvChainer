@@ -34,6 +34,26 @@ class Config:
                     "package_versions_url": "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/versions/spack.ver",
                     "package_versions_format": "shell_exports",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "gsi": {
+                    "name": "GSI",
+                    "spack_metapackage": "gsi-env",
+                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_common.lua",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "upp": {
+                    "name": "UPP",
+                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/upp_common.lua",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "ufs_utils": {
+                    "name": "UFS_UTILS",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
+                },
+                "aqm_utils": {
+                    "name": "AQM-utils",
+                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_common.lua",
+                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 }
             },
             "platforms": {
@@ -52,7 +72,30 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.ursa.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.ursa.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_ursa.intel.lua"
+                            ]
+                        },
+                        "upp": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/ursa_intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/ursa_intelllvm.lua"
+                            ]
+                        },
+                        "ufs_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.ursa.intelllvm.lua",
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.ursa.gnu.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_ursa.intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_ursa.intelllvm.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_ursa.gnu.lua"
                             ]
                         }
                     }
@@ -70,7 +113,28 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.orion.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.orion.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_orion.intel.lua"
+                            ]
+                        },
+                        "upp": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/orion_intel.lua"
+                            ]
+                        },
+                        "ufs_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.orion.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.orion.intelllvm.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_orion.intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_orion.intelllvm.lua"
                             ]
                         }
                     }
@@ -89,7 +153,29 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.hercules.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.hercules.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_hercules.intel.lua"
+                            ]
+                        },
+                        "upp": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/hercules_intel.lua"
+                            ]
+                        },
+                        "ufs_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.hercules.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.hercules.intelllvm.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_hercules.intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_hercules.intelllvm.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_hercules.gnu.lua"
                             ]
                         }
                     }
@@ -103,6 +189,22 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_jet.intel.lua",
                             ],
+                        },
+                        "upp": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/jet_intel.lua"
+                            ]
+                        },
+                        "ufs_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.jet.intel.lua",
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.jet.intelllvm.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_jet.intel.lua"
+                            ]
                         }
                     }
                 },
@@ -114,6 +216,12 @@ class Config:
                         "ufs_weather_model": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/ufs-community/ufs-weather-model/develop/modulefiles/ufs_gaeac5.intel.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac5.intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac5.intelllvm.lua"
                             ]
                         }
                     }
@@ -131,7 +239,27 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.gaeac6.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.gaeac6.lua"
+                            ]
+                        },
+                        "gsi": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/GSI/develop/modulefiles/gsi_gaeac6.intel.lua"
+                            ]
+                        },
+                        "upp": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/UPP/develop/modulefiles/gaeac6_intel.lua"
+                            ]
+                        },
+                        "ufs_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/ufs-community/UFS_UTILS/develop/modulefiles/build.gaeac6.intel.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac6.intel.lua",
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac6.intelllvm.lua"
                             ]
                         }
                     }
@@ -149,7 +277,11 @@ class Config:
                         "global_workflow": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_setup.wcoss2.lua",
-                                "https://raw.githubusercontent.com/NOAA-EMC/global-workflow/develop/modulefiles/gw_run.wcoss2.lua"
+                            ]
+                        },
+                        "aqm_utils": {
+                            "module_url_templates": [
+                                "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_acorn.intel.lua"
                             ]
                         }
                     }
