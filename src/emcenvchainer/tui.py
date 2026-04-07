@@ -52,25 +52,28 @@ class TUIMenu:
             # Display help text if provided
             start_y = 4
             if help_text:
-                # Word wrap the help text to fit the screen width
+                # Word wrap each paragraph (split on '\n') to fit the screen width
                 max_width = width - 8
-                words = help_text.split()
+                paragraphs = help_text.split('\n')
                 lines = []
-                current_line = []
-                current_length = 0
-                
-                for word in words:
-                    if current_length + len(word) + 1 <= max_width:
-                        current_line.append(word)
-                        current_length += len(word) + 1
-                    else:
-                        if current_line:
-                            lines.append(' '.join(current_line))
-                        current_line = [word]
-                        current_length = len(word) + 1
-                
-                if current_line:
-                    lines.append(' '.join(current_line))
+                for para in paragraphs:
+                    if para == '':
+                        lines.append('')  # blank separator line
+                        continue
+                    words = para.split()
+                    current_line = []
+                    current_length = 0
+                    for word in words:
+                        if current_length + len(word) + 1 <= max_width:
+                            current_line.append(word)
+                            current_length += len(word) + 1
+                        else:
+                            if current_line:
+                                lines.append(' '.join(current_line))
+                            current_line = [word]
+                            current_length = len(word) + 1
+                    if current_line:
+                        lines.append(' '.join(current_line))
                 
                 # Display the wrapped help text
                 for i, line in enumerate(lines):
@@ -1179,8 +1182,19 @@ class EmcEnvChainerTUI:
         """
         menu = TUIMenu(stdscr, "Select Installation Source")
         
-        # Help text with documentation link
-        help_text = "For documentation on package versions for each release, add-on environments, and platform-specific notes, see https://github.com/JCSDA/spack-stack/wiki"
+        help_text = (
+            "Choose what to base your new environment on:"
+            "\n 🌐 Selecting a model application will download module/version files from that repository's head of develop"
+            " and present its package list for you to select from, modify, or remove based on the corresponding"
+            " spack-stack installation used by that application on this platform —"
+            " ideal if you want an environment tailored to a specific model's dependencies."
+            "\n 🔗 spack-stack installation entries let you chain to a spack-stack installation,"
+            " creating a new installation with only user-specified packages (which will either"
+            " be built or used directly from the upstream environment)."
+            "\n 📁 Use 'Specify custom path' if the installation you want is not listed."
+            "\n\nFor documentation on package versions for each spack-stack release, add-on environments,"
+            " and platform-specific notes, see https://github.com/JCSDA/spack-stack/wiki"
+        )
         
         # Combine Spack installations and model applications
         options = []
@@ -1502,7 +1516,7 @@ class EmcEnvChainerTUI:
         if skipped_unavailable:
             unique_missing = sorted(set(skipped_unavailable))
             status_lines = [
-                f"Warning: {len(unique_missing)} package(s) not from Spack. Skipping: " + ", ".join(unique_missing),
+                f"Warning: {len(unique_missing)} package(s) not found from Spack. Skipping: " + ", ".join(unique_missing),
             ]
 
         if not display_packages and not allow_additional_packages:
