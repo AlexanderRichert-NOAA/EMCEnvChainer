@@ -702,6 +702,16 @@ class SpackManager:
                     # Just add the compiler flags (package name/version not needed in require)
                     spack_section['packages'][package_key]['require'] = [compiler_flags]
 
+        # Write buildable:false for packages explicitly flagged by the user
+        for pkg in packages:
+            if pkg.get("buildable_false"):
+                pkg_name = pkg["name"]
+                coloned = pkg_name + ":"
+                key = coloned if coloned in spack_section['packages'] else pkg_name
+                if key not in spack_section['packages']:
+                    spack_section['packages'][key] = {}
+                spack_section['packages'][key]['buildable'] = False
+
         # Always set common build deps (cmake, gmake, ...) as non-buildable
         always_upstream_packages = ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils']
         for pkg_name in always_upstream_packages:

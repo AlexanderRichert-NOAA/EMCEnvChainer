@@ -3730,3 +3730,64 @@ xyz9876:SPEC:hdf5@1.10.6~mpi"""
         # Verify the custom path was passed to spack find
         call_args = mock_run_cmd.call_args[0][0]
         assert str(custom_upstream) in " ".join(call_args)
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_buildable_false_written_for_flagged_packages(self, mock_upstream, spack_manager, tmp_path):
+        """Test that packages with buildable_false=True get buildable: false in spack.yaml packages section."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        (upstream / "spack.yaml").write_text(r"""
+spack:
+  specs: []
+  packages: {}
+""")
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        packages = [
+            {"name": "netcdf-c", "version": "4.9.0", "variants": "", "buildable_false": True},
+            {"name": "hdf5", "version": "1.14.0", "variants": ""},  # no flag
+        ]
+
+        class DummyPlatform:
+            config = {}
+
+        from ruamel.yaml import YAML as RYAML
+        out = spack_manager._create_spack_yaml(str(upstream), packages, new_env, [], DummyPlatform())
+
+        yaml = RYAML(typ="safe")
+        cfg = yaml.load(out)
+        pkgs = cfg["spack"]["packages"]
+
+        # netcdf-c should have buildable: false
+        assert pkgs.get("netcdf-c", {}).get("buildable") is False
+        # hdf5 should NOT have buildable: false
+        assert pkgs.get("hdf5", {}).get("buildable") is not False
+
+    @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
+    def test__create_spack_yaml_buildable_false_not_written_when_not_flagged(self, mock_upstream, spack_manager, tmp_path):
+        """Test that packages without buildable_false flag do not get buildable: false."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        (upstream / "spack.yaml").write_text(r"""
+spack:
+  specs: []
+""")
+        new_env = tmp_path / "env"
+        new_env.mkdir()
+
+        packages = [
+            {"name": "esmf", "version": "8.5.0", "variants": ""},
+        ]
+
+        class DummyPlatform:
+            config = {}
+
+        from ruamel.yaml import YAML as RYAML
+        out = spack_manager._create_spack_yaml(str(upstream), packages, new_env, [], DummyPlatform())
+
+        yaml = RYAML(typ="safe")
+        cfg = yaml.load(out)
+        pkgs = cfg["spack"].get("packages", {})
+
+        assert pkgs.get("esmf", {}).get("buildable") is not False

@@ -2373,7 +2373,7 @@ class TestEmcEnvChainerTUI:
 
         status_lines = mock_radio.display_menu.call_args[1]["status_lines"]
         assert status_lines is not None
-        assert any("not from spack" in line.lower() for line in status_lines)
+        assert any("not found from spack" in line.lower() for line in status_lines)
         assert any("skipping:" in line.lower() for line in status_lines)
         assert any("external-tool" in line for line in status_lines)
     
@@ -2669,6 +2669,133 @@ class TestEmcEnvChainerTUI:
         assert len(captured_options) == 1
         assert "❌" in captured_options[0]
         assert "📦" not in captured_options[0]
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_b_key_sets_buildable_false_no_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'b' with no explicit selection sets buildable_false on the package."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        def _display_menu_mark_b(options, **kwargs):
+            mock_radio.current_row = 1
+            kwargs["key_actions"][ord('b')]()
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_mark_b
+
+        result = tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert result is not None
+        hdf5 = next(p for p in result if p["name"] == "hdf5")
+        assert hdf5.get("buildable_false") is True
+        netcdf = next(p for p in result if p["name"] == "netcdf-c")
+        assert not netcdf.get("buildable_false")
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_b_key_toggles_buildable_false_on_off(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'b' twice cancels the buildable_false flag."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+        ]
+
+        def _display_menu_toggle_b_twice(options, **kwargs):
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('b')]()
+            kwargs["key_actions"][ord('b')]()
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_toggle_b_twice
+
+        result = tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert result is not None
+        assert not result[0].get("buildable_false")
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_b_key_sets_buildable_false_with_explicit_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test buildable_false is propagated for explicitly selected packages."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        def _display_menu_select_and_b(options, **kwargs):
+            # Mark netcdf-c (index 0) not-buildable, then select it for modification
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('b')]()
+            return [0]
+
+        mock_radio.display_menu.side_effect = _display_menu_select_and_b
+
+        spec = {"name": "netcdf-c", "version": "4.9.1"}
+        with patch.object(tui_app, '_get_package_specification', return_value=spec):
+            result = tui_app._select_packages_with_radio_buttons(
+                mock_stdscr, all_packages, mock_app, mock_spack_manager
+            )
+
+        assert result is not None
+        netcdf = next(p for p in result if p["name"] == "netcdf-c")
+        assert netcdf.get("buildable_false") is True
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_b_key_updates_label_to_no_build_icon(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that marking a package not-buildable replaces the 📦 icon with ⛔ in the label."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_capture_after_b(options, **kwargs):
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('b')]()
+            captured_options.extend(options)
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_capture_after_b
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert len(captured_options) == 1
+        assert "⛔" in captured_options[0]
+        assert "📦" not in captured_options[0]
+        assert "not buildable" in captured_options[0]
 
     
     @patch('emcenvchainer.tui.PackageSpecDialog')

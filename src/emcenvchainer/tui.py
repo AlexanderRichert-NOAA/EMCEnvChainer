@@ -1538,6 +1538,7 @@ class EmcEnvChainerTUI:
 
         locks: Dict[int, Optional[Dict]] = {}      # pkg idx -> {'hash': ..., 'spec': ...} or None
         removed_items: set = set()                     # pkg indices marked for removal from env
+        buildable_false_items: set = set()             # pkg indices marked buildable:false
         _hashes_cache: Dict[int, List[Dict]] = {}  # lazy per-package hash lists
         base_option_labels: List[str] = list(options)  # snapshot without lock suffix
 
@@ -1563,12 +1564,19 @@ class EmcEnvChainerTUI:
             base = base_option_labels[idx] if idx < len(base_option_labels) else options[idx]
             if idx in removed_items:
                 base = base.replace("📦 ", "❌ ", 1)
+            elif idx in buildable_false_items:
+                base = base.replace("📦 ", "⛔ ", 1)
+            suffixes = []
+            if idx in buildable_false_items:
+                suffixes.append("not buildable (only use an upstream spec)")
             lock = locks.get(idx)
             if lock:
                 spec = lock['spec']
                 if len(spec) > 80:
                     spec = spec[:77] + "..."
-                return f"{base} [🔒 {spec} /{lock['hash']}]"
+                suffixes.append(f"🔒 {spec} /{lock['hash']}")
+            if suffixes:
+                return f"{base} [{', '.join(suffixes)}]"
             return base
 
         def _toggle_lock_current():
@@ -1605,16 +1613,28 @@ class EmcEnvChainerTUI:
             else:
                 removed_items.add(idx)
             options[idx] = _build_label(idx)
+
+        def _toggle_buildable_false_current():
+            idx = radio_menu.current_row
+            if idx >= len(display_packages):
+                return
+            if idx in buildable_false_items:
+                buildable_false_items.discard(idx)
+            else:
+                buildable_false_items.add(idx)
+            options[idx] = _build_label(idx)
         # --- End lock state infrastructure ---
 
         additional_packages: List[Dict] = []
         extra_instructions: List[str] = [
             "'d' to toggle removal of highlighted package from environment",
+            "'b' to toggle buildable:false for highlighted package",
             "'l' to toggle upstream lock for highlighted package",
             "'L' to lock all packages to their first upstream spec",
         ]
         key_actions: Dict[int, Any] = {
             ord('d'): _toggle_remove_current,
+            ord('b'): _toggle_buildable_false_current,
             ord('l'): _toggle_lock_current,
             ord('L'): _lock_all_packages,
         }
@@ -1656,8 +1676,12 @@ class EmcEnvChainerTUI:
             for i, entry in enumerate(display_packages):
                 if entry["kind"] == "base" and i not in removed_items:
                     pkg = entry["pkg"]
-                    if locks.get(i):
-                        pkg = {**pkg, "upstream_hash": locks[i]["hash"]}
+                    if locks.get(i) or i in buildable_false_items:
+                        pkg = {**pkg}
+                        if locks.get(i):
+                            pkg["upstream_hash"] = locks[i]["hash"]
+                        if i in buildable_false_items:
+                            pkg["buildable_false"] = True
                     result.append(pkg)
             return result + additional_packages
 
@@ -1678,21 +1702,27 @@ class EmcEnvChainerTUI:
                     # Apply lock set in the radio button screen (overrides any hash from dialog)
                     if locks.get(idx):
                         spec["upstream_hash"] = locks[idx]["hash"]
+                    if idx in buildable_false_items:
+                        spec["buildable_false"] = True
                     metapackage = pkg.get("application_metapackage")
                     if metapackage:
                         spec["application_metapackage"] = metapackage
                     selected_packages.append(spec)
 
         # Preserve existing behavior: unselected base packages are still included unchanged.
-        # Apply locks to unselected packages as well.
+        # Apply locks and buildable_false to unselected packages as well.
         # Packages marked for removal (removed_items) are excluded entirely.
-        selected_packages.extend(
-            [
-                {**entry["pkg"], "upstream_hash": locks[idx]["hash"]} if locks.get(idx) else entry["pkg"]
-                for idx, entry in enumerate(display_packages)
-                if entry["kind"] == "base" and idx not in selected_indices and idx not in removed_items
-            ]
-        )
+        for idx, entry in enumerate(display_packages):
+            if entry["kind"] != "base" or idx in selected_indices or idx in removed_items:
+                continue
+            pkg = entry["pkg"]
+            if locks.get(idx) or idx in buildable_false_items:
+                pkg = {**pkg}
+                if locks.get(idx):
+                    pkg["upstream_hash"] = locks[idx]["hash"]
+                if idx in buildable_false_items:
+                    pkg["buildable_false"] = True
+            selected_packages.append(pkg)
 
         return selected_packages if selected_packages else None
 
