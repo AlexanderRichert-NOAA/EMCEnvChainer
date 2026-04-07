@@ -808,7 +808,7 @@ class RadioButtonMenu:
                 self.stdscr.addstr(height - len(instructions) - 2, width - 3, "↓")
             
             # Show selection count
-            count_text = f"Selected: {len(self.selected_items)}"
+            count_text = f"Selected for modification: {len(self.selected_items)}"
             self.stdscr.addstr(2, width - len(count_text) - 2, count_text)
             
             self.stdscr.refresh()
@@ -1523,6 +1523,7 @@ class EmcEnvChainerTUI:
             _upstream_env_path = _up_obj.parent if _up_obj.name == 'install' else _up_obj
 
         locks: Dict[int, Optional[Dict]] = {}      # pkg idx -> {'hash': ..., 'spec': ...} or None
+        removed_items: set = set()                     # pkg indices marked for removal from env
         _hashes_cache: Dict[int, List[Dict]] = {}  # lazy per-package hash lists
         base_option_labels: List[str] = list(options)  # snapshot without lock suffix
 
@@ -1546,6 +1547,8 @@ class EmcEnvChainerTUI:
 
         def _build_label(idx: int) -> str:
             base = base_option_labels[idx] if idx < len(base_option_labels) else options[idx]
+            if idx in removed_items:
+                base = base.replace("📦 ", "❌ ", 1)
             lock = locks.get(idx)
             if lock:
                 spec = lock['spec']
@@ -1578,14 +1581,26 @@ class EmcEnvChainerTUI:
                     if hashes:
                         locks[i] = hashes[0]
                         options[i] = _build_label(i)
+
+        def _toggle_remove_current():
+            idx = radio_menu.current_row
+            if idx >= len(display_packages):
+                return
+            if idx in removed_items:
+                removed_items.discard(idx)
+            else:
+                removed_items.add(idx)
+            options[idx] = _build_label(idx)
         # --- End lock state infrastructure ---
 
         additional_packages: List[Dict] = []
         extra_instructions: List[str] = [
+            "'d' to toggle removal of highlighted package from environment",
             "'l' to toggle upstream lock for highlighted package",
             "'L' to lock all packages to their first upstream spec",
         ]
         key_actions: Dict[int, Any] = {
+            ord('d'): _toggle_remove_current,
             ord('l'): _toggle_lock_current,
             ord('L'): _lock_all_packages,
         }
@@ -1625,7 +1640,7 @@ class EmcEnvChainerTUI:
         if not selected_indices:
             result = []
             for i, entry in enumerate(display_packages):
-                if entry["kind"] == "base":
+                if entry["kind"] == "base" and i not in removed_items:
                     pkg = entry["pkg"]
                     if locks.get(i):
                         pkg = {**pkg, "upstream_hash": locks[i]["hash"]}
@@ -1656,11 +1671,12 @@ class EmcEnvChainerTUI:
 
         # Preserve existing behavior: unselected base packages are still included unchanged.
         # Apply locks to unselected packages as well.
+        # Packages marked for removal (removed_items) are excluded entirely.
         selected_packages.extend(
             [
                 {**entry["pkg"], "upstream_hash": locks[idx]["hash"]} if locks.get(idx) else entry["pkg"]
                 for idx, entry in enumerate(display_packages)
-                if entry["kind"] == "base" and idx not in selected_indices
+                if entry["kind"] == "base" and idx not in selected_indices and idx not in removed_items
             ]
         )
 

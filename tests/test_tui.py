@@ -2530,6 +2530,146 @@ class TestEmcEnvChainerTUI:
         assert result is not None
         assert result[0]["name"] == "netcdf-c"
         assert any(pkg.get("name") == "ecbuild" for pkg in result)
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_d_key_removes_package_no_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'd' removes a package when no packages are explicitly selected."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+            {"name": "esmf", "current_version": "8.5.0", "type": "upgradable"},
+        ]
+
+        def _display_menu_mark_remove(options, **kwargs):
+            # Simulate pressing 'd' on the second package (index 1)
+            mock_radio.current_row = 1
+            kwargs["key_actions"][ord('d')]()
+            return []  # No space-bar selections; all unselected
+
+        mock_radio.display_menu.side_effect = _display_menu_mark_remove
+
+        result = tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert result is not None
+        result_names = [p["name"] for p in result]
+        assert "hdf5" not in result_names
+        assert "netcdf-c" in result_names
+        assert "esmf" in result_names
+        assert len(result) == 2
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_d_key_toggles_removal_on_off(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'd' twice on the same package restores it (toggle off)."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        def _display_menu_toggle_twice(options, **kwargs):
+            # Press 'd' on index 0 twice — should cancel out
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('d')]()
+            kwargs["key_actions"][ord('d')]()
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_toggle_twice
+
+        result = tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert result is not None
+        result_names = [p["name"] for p in result]
+        assert "netcdf-c" in result_names
+        assert "hdf5" in result_names
+        assert len(result) == 2
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_d_key_removes_package_with_explicit_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that 'd'-marked packages are excluded even when other packages are selected."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+            {"name": "esmf", "current_version": "8.5.0", "type": "upgradable"},
+        ]
+
+        def _display_menu_select_and_remove(options, **kwargs):
+            # Mark esmf (index 2) for removal via 'd'
+            mock_radio.current_row = 2
+            kwargs["key_actions"][ord('d')]()
+            # Explicitly select netcdf-c (index 0) for modification
+            return [0]
+
+        mock_radio.display_menu.side_effect = _display_menu_select_and_remove
+
+        spec = {"name": "netcdf-c", "version": "4.9.1"}
+        with patch.object(tui_app, '_get_package_specification', return_value=spec):
+            result = tui_app._select_packages_with_radio_buttons(
+                mock_stdscr, all_packages, mock_app, mock_spack_manager
+            )
+
+        assert result is not None
+        result_names = [p["name"] for p in result]
+        assert "esmf" not in result_names
+        assert "netcdf-c" in result_names
+        assert "hdf5" in result_names  # unselected but not removed
+        assert len(result) == 2
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_d_key_updates_label_to_red_x(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that marking a package for removal replaces the 📦 icon with ❌ in the label."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_capture_after_d(options, **kwargs):
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('d')]()
+            captured_options.extend(options)
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_capture_after_d
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager
+        )
+
+        assert len(captured_options) == 1
+        assert "❌" in captured_options[0]
+        assert "📦" not in captured_options[0]
+
     
     @patch('emcenvchainer.tui.PackageSpecDialog')
     def test_get_package_specification_success(self, mock_dialog_class, tui_app, mock_stdscr):
