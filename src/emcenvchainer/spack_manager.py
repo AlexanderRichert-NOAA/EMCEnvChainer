@@ -713,7 +713,7 @@ class SpackManager:
                 spack_section['packages'][key]['buildable'] = False
 
         # Always set common build deps (cmake, gmake, ...) as non-buildable
-        always_upstream_packages = ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils']
+        always_upstream_packages = ['cmake', 'gmake', 'ecbuild', 'bison', 'diffutils', 'ninja', 'meson']
         for pkg_name in always_upstream_packages:
             coloned_name = pkg_name + ":"
             if coloned_name in spack_section['packages']:
