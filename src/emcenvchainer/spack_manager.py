@@ -668,6 +668,10 @@ class SpackManager:
             spack_section['config'] = {}
         spack_section['config']['deprecated'] = True
         spack_section['config']['build_stage'] = '$env/build_stage'
+        
+        # Configure local cache directories to avoid permission issues with upstream cache
+        spack_section['config']['misc_cache'] = '$env/.spack-cache/misc'
+        spack_section['config']['source_cache'] = '$env/.spack-cache/source'
 
         # Add package-specific overrides for packages being updated
         if 'packages' not in spack_section:
