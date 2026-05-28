@@ -1629,13 +1629,13 @@ class EmcEnvChainerTUI:
 
         additional_packages: List[Dict] = []
         extra_instructions: List[str] = [
-            "'d' to skip/exclude highlighted package from installation (will not be installed)",
+            "'x' to skip/exclude highlighted package from installation (will not be installed)",
             "'b' to toggle buildable:false for highlighted package",
             "'l' to toggle upstream lock for highlighted package",
             "'L' to lock all packages to their first upstream spec",
         ]
         key_actions: Dict[int, Any] = {
-            ord('d'): _toggle_remove_current,
+            ord('x'): _toggle_remove_current,
             ord('b'): _toggle_buildable_false_current,
             ord('l'): _toggle_lock_current,
             ord('L'): _lock_all_packages,
