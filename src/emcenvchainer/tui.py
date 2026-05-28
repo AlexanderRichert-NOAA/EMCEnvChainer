@@ -1599,6 +1599,23 @@ class EmcEnvChainerTUI:
             options[idx] = _build_label(idx)
 
         def _lock_all_packages():
+            # Fetch all upstream packages in a single command for efficiency
+            if _upstream_env_path and spack_manager:
+                try:
+                    all_packages = spack_manager.get_all_upstream_package_hashes(_upstream_env_path)
+                    # Pre-populate the cache with the batch results
+                    for i in range(len(display_packages)):
+                        if display_packages[i]["kind"] == "base":
+                            pkg_name = display_packages[i]["pkg"]["name"]
+                            if pkg_name in all_packages:
+                                _hashes_cache[i] = all_packages[pkg_name]
+                            else:
+                                _hashes_cache[i] = []
+                except Exception:
+                    # Fall back to individual fetches if batch fails
+                    pass
+            
+            # Now lock each package using cached data
             for i in range(len(display_packages)):
                 if display_packages[i]["kind"] == "base":
                     hashes = _fetch_hashes_for(i)

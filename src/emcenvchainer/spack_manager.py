@@ -1772,6 +1772,54 @@ class SpackManager:
 
         return candidates
 
+    def get_all_upstream_package_hashes(self, upstream_env_path: Path) -> Dict[str, List[Dict[str, str]]]:
+        """Get all available concrete spec hashes from upstream environment in a single query.
+        
+        Args:
+            upstream_env_path: Path to upstream environment directory
+            
+        Returns:
+            Dictionary mapping package names to lists of dicts with 'hash' and 'spec' keys
+        """
+        packages_map = {}
+        
+        try:
+            result = self._run_spack_command([
+                '-e', str(upstream_env_path),
+                'find',
+                '--format', '{name}:HASH:{hash:7}:SPEC:{name}{@version}{variants}'
+            ])
+            
+            if result.returncode == 0 and result.stdout.strip():
+                for line in result.stdout.strip().split('\n'):
+                    if ':HASH:' in line and ':SPEC:' in line:
+                        # Parse line: package_name:HASH:hash:SPEC:spec
+                        first_colon = line.find(':')
+                        if first_colon == -1:
+                            continue
+                        package_name = line[:first_colon]
+                        rest = line[first_colon + 1:]
+                        
+                        if rest.startswith('HASH:'):
+                            rest = rest[5:]  # Remove 'HASH:'
+                            hash_end = rest.find(':SPEC:')
+                            if hash_end != -1:
+                                hash_part = rest[:hash_end].strip()
+                                spec_part = rest[hash_end + 6:].strip()  # Remove ':SPEC:'
+                                
+                                if package_name not in packages_map:
+                                    packages_map[package_name] = []
+                                packages_map[package_name].append({
+                                    'hash': hash_part,
+                                    'spec': spec_part
+                                })
+                        
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Could not retrieve all package hashes from upstream: {e}")
+        
+        return packages_map
+
     def get_upstream_package_hashes(self, upstream_env_path: Path, package_name: str) -> List[Dict[str, str]]:
         """Get available concrete spec hashes for a package from upstream environment.
         

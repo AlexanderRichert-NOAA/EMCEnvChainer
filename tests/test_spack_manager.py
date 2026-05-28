@@ -3730,6 +3730,65 @@ xyz9876:SPEC:hdf5@1.10.6~mpi"""
         call_args = mock_run_cmd.call_args[0][0]
         assert str(custom_upstream) in " ".join(call_args)
 
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_all_upstream_package_hashes(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_all_upstream_package_hashes retrieves all packages in a single query."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock spack find output with multiple packages
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """hdf5:HASH:abc1234:SPEC:hdf5@1.10.7+mpi
+hdf5:HASH:xyz9876:SPEC:hdf5@1.10.6~mpi
+netcdf:HASH:def5678:SPEC:netcdf@4.7.4+mpi
+openmpi:HASH:ghi9012:SPEC:openmpi@4.1.0"""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_all_upstream_package_hashes(upstream)
+        
+        # Should return dict mapping package names to lists of specs
+        assert len(result) == 3
+        assert "hdf5" in result
+        assert "netcdf" in result
+        assert "openmpi" in result
+        
+        # Check hdf5 has two specs
+        assert len(result["hdf5"]) == 2
+        assert result["hdf5"][0] == {"hash": "abc1234", "spec": "hdf5@1.10.7+mpi"}
+        assert result["hdf5"][1] == {"hash": "xyz9876", "spec": "hdf5@1.10.6~mpi"}
+        
+        # Check other packages
+        assert len(result["netcdf"]) == 1
+        assert result["netcdf"][0] == {"hash": "def5678", "spec": "netcdf@4.7.4+mpi"}
+        assert len(result["openmpi"]) == 1
+        assert result["openmpi"][0] == {"hash": "ghi9012", "spec": "openmpi@4.1.0"}
+        
+        # Verify correct spack command was called
+        mock_run_cmd.assert_called_once()
+        call_args = mock_run_cmd.call_args[0][0]
+        assert "find" in call_args
+        assert "{name}:HASH:{hash:7}:SPEC:{name}{@version}{variants}" in call_args
+        # Should NOT include a specific package name to filter (gets all packages)
+        assert "-e" in call_args
+        assert str(upstream) in call_args
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_all_upstream_package_hashes_empty(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_all_upstream_package_hashes returns empty dict when no packages found."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock empty output
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = ""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_all_upstream_package_hashes(upstream)
+        
+        assert result == {}
+
     @patch.object(SpackManager, '_get_upstream_package_info', return_value={})
     def test__create_spack_yaml_buildable_false_written_for_flagged_packages(self, mock_upstream, spack_manager, tmp_path):
         """Test that packages with buildable_false=True get buildable: false in spack.yaml packages section."""
