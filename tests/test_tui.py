@@ -2532,8 +2532,8 @@ class TestEmcEnvChainerTUI:
         assert any(pkg.get("name") == "ecbuild" for pkg in result)
 
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_d_key_removes_package_no_selection(self, mock_radio_class, tui_app, mock_stdscr):
-        """Test that pressing 'd' removes a package when no packages are explicitly selected."""
+    def test_select_packages_x_key_removes_package_no_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'x' removes a package when no packages are explicitly selected."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
 
@@ -2548,9 +2548,9 @@ class TestEmcEnvChainerTUI:
         ]
 
         def _display_menu_mark_remove(options, **kwargs):
-            # Simulate pressing 'd' on the second package (index 1)
+            # Simulate pressing 'x' on the second package (index 1)
             mock_radio.current_row = 1
-            kwargs["key_actions"][ord('d')]()
+            kwargs["key_actions"][ord('x')]()
             return []  # No space-bar selections; all unselected
 
         mock_radio.display_menu.side_effect = _display_menu_mark_remove
@@ -2567,8 +2567,8 @@ class TestEmcEnvChainerTUI:
         assert len(result) == 2
 
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_d_key_toggles_removal_on_off(self, mock_radio_class, tui_app, mock_stdscr):
-        """Test that pressing 'd' twice on the same package restores it (toggle off)."""
+    def test_select_packages_x_key_toggles_removal_on_off(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that pressing 'x' twice on the same package restores it (toggle off)."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
 
@@ -2582,10 +2582,10 @@ class TestEmcEnvChainerTUI:
         ]
 
         def _display_menu_toggle_twice(options, **kwargs):
-            # Press 'd' on index 0 twice — should cancel out
+            # Press 'x' on index 0 twice — should cancel out
             mock_radio.current_row = 0
-            kwargs["key_actions"][ord('d')]()
-            kwargs["key_actions"][ord('d')]()
+            kwargs["key_actions"][ord('x')]()
+            kwargs["key_actions"][ord('x')]()
             return []
 
         mock_radio.display_menu.side_effect = _display_menu_toggle_twice
@@ -2601,8 +2601,8 @@ class TestEmcEnvChainerTUI:
         assert len(result) == 2
 
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_d_key_removes_package_with_explicit_selection(self, mock_radio_class, tui_app, mock_stdscr):
-        """Test that 'd'-marked packages are excluded even when other packages are selected."""
+    def test_select_packages_x_key_removes_package_with_explicit_selection(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that 'x'-marked packages are excluded even when other packages are selected."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
 
@@ -2617,9 +2617,9 @@ class TestEmcEnvChainerTUI:
         ]
 
         def _display_menu_select_and_remove(options, **kwargs):
-            # Mark esmf (index 2) for removal via 'd'
+            # Mark esmf (index 2) for removal via 'x'
             mock_radio.current_row = 2
-            kwargs["key_actions"][ord('d')]()
+            kwargs["key_actions"][ord('x')]()
             # Explicitly select netcdf-c (index 0) for modification
             return [0]
 
@@ -2639,7 +2639,7 @@ class TestEmcEnvChainerTUI:
         assert len(result) == 2
 
     @patch('emcenvchainer.tui.RadioButtonMenu')
-    def test_select_packages_d_key_updates_label_to_red_x(self, mock_radio_class, tui_app, mock_stdscr):
+    def test_select_packages_x_key_updates_label_to_red_x(self, mock_radio_class, tui_app, mock_stdscr):
         """Test that marking a package for removal replaces the 📦 icon with ❌ in the label."""
         mock_radio = Mock()
         mock_radio_class.return_value = mock_radio
@@ -2656,7 +2656,7 @@ class TestEmcEnvChainerTUI:
 
         def _display_menu_capture_after_d(options, **kwargs):
             mock_radio.current_row = 0
-            kwargs["key_actions"][ord('d')]()
+            kwargs["key_actions"][ord('x')]()
             captured_options.extend(options)
             return []
 
@@ -2667,7 +2667,7 @@ class TestEmcEnvChainerTUI:
         )
 
         assert len(captured_options) == 1
-        assert "❌" in captured_options[0]
+        assert "⊘" in captured_options[0]
         assert "📦" not in captured_options[0]
 
     @patch('emcenvchainer.tui.RadioButtonMenu')
