@@ -53,6 +53,7 @@ class TestSpackManager:
         assert manager.spack_root == Path(temp_spack_root)
         assert manager.config == mock_config
         assert manager.spack_exe == Path(temp_spack_root) / "bin" / "spack"
+        assert manager.spack_stack_dir == str(Path(temp_spack_root).parent.resolve())
         assert manager.logger is None
         assert manager.pending_recipes == {}
         assert manager.pending_checksums == []
@@ -346,7 +347,6 @@ class TestSpackManager:
 
             mock_run.assert_called_once_with(
                 ['-e', '/path/to/spack-stack-1.2.3/envs/testenv', 'find', '--format', '{name}'],
-                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
             )
 
     def test_check_package_exists_normalizes_install_path_to_env(self, spack_manager):
@@ -372,7 +372,6 @@ class TestSpackManager:
                     '--format',
                     '{name}',
                 ],
-                vars={'SPACK_STACK_DIR': '/path/to/spack-stack-1.2.3'},
             )
 
     def test_check_package_exists_raises_without_upstream_path(self, spack_manager):
@@ -760,15 +759,15 @@ class TestSpackManager:
 
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
-    @patch('subprocess.run')
+    @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_fetch_and_write_package_directory')
-    def test_process_pending_checksums_timeout(self, mock_fetch_local, mock_subprocess,
+    def test_process_pending_checksums_timeout(self, mock_fetch_local, mock_run_spack,
                                               mock_file, mock_mkdir, spack_manager):
         """Test _process_pending_checksums when subprocess times out."""
         mock_fetch_local.return_value = True
         
         # Mock subprocess timeout
-        mock_subprocess.side_effect = subprocess.TimeoutExpired("spack", 300)
+        mock_run_spack.side_effect = subprocess.TimeoutExpired("spack", 300)
         
         # Add a pending checksum
         spack_manager.add_pending_checksum("test-pkg", "1.0.0")
@@ -788,15 +787,15 @@ class TestSpackManager:
 
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
-    @patch('subprocess.run')
+    @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_fetch_and_write_package_directory')
-    def test_process_pending_checksums_multiple_packages(self, mock_fetch_local, mock_subprocess,
+    def test_process_pending_checksums_multiple_packages(self, mock_fetch_local, mock_run_spack,
                                                         mock_file, mock_mkdir, spack_manager):
         """Test _process_pending_checksums with multiple packages."""
         mock_fetch_local.return_value = True
         
         # Mock different subprocess results
-        def subprocess_side_effect(*args, **kwargs):
+        def run_spack_side_effect(*args, **kwargs):
             cmd = args[0]
             if "pkg1" in cmd:
                 result = Mock()
@@ -810,7 +809,7 @@ class TestSpackManager:
             else:  # pkg3
                 raise subprocess.TimeoutExpired("spack", 300)
         
-        mock_subprocess.side_effect = subprocess_side_effect
+        mock_run_spack.side_effect = run_spack_side_effect
         
         # Add multiple pending checksums
         spack_manager.add_pending_checksum("pkg1", "1.0.0")
@@ -828,17 +827,17 @@ class TestSpackManager:
         assert operations['pkg2'] == 'checksum_failed'
         assert operations['pkg3'] == 'checksum_timeout'
         
-        # Should have made three subprocess calls
-        assert mock_subprocess.call_count == 3
+        # Should have made three spack command calls
+        assert mock_run_spack.call_count == 3
         
         # Should clear pending checksums
         assert len(spack_manager.pending_checksums) == 0
 
     @patch('pathlib.Path.mkdir')
     @patch('builtins.open', new_callable=mock_open)
-    @patch('subprocess.run')
+    @patch.object(SpackManager, '_run_spack_command')
     @patch.object(SpackManager, '_fetch_and_write_package_directory')
-    def test_process_pending_checksums_environment_variables(self, mock_fetch_local, mock_subprocess,
+    def test_process_pending_checksums_environment_variables(self, mock_fetch_local, mock_run_spack,
                                                            mock_file, mock_mkdir, spack_manager):
         """Test _process_pending_checksums sets correct environment variables."""
         mock_fetch_local.return_value = True
@@ -846,19 +845,17 @@ class TestSpackManager:
         # Mock successful subprocess result
         mock_result = Mock()
         mock_result.returncode = 0
-        mock_subprocess.return_value = mock_result
+        mock_run_spack.return_value = mock_result
         
         # Add a pending checksum
         spack_manager.add_pending_checksum("test-pkg", "1.0.0")
         
         result = spack_manager._process_pending_checksums("/test/env")
         
-        # Should have called subprocess with modified environment
-        assert mock_subprocess.call_count == 1
-        call_kwargs = mock_subprocess.call_args[1]
-        assert 'env' in call_kwargs
-        assert call_kwargs['env']['EDITOR'] == 'echo'
-        assert call_kwargs['timeout'] == 150
+        # Should have called _run_spack_command with EDITOR env var
+        assert mock_run_spack.call_count == 1
+        call_args = mock_run_spack.call_args
+        assert call_args[1]['vars']['EDITOR'] == 'echo'
 
     @patch.object(SpackManager, '_process_pending_recipes')
     @patch.object(SpackManager, '_process_pending_checksums')
