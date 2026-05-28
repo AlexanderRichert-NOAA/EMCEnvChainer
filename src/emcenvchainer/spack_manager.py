@@ -810,7 +810,7 @@ class SpackManager:
             import threading
             import time
             
-            cmd = [str(self.spack_exe), '-e', env_path, 'install', '-j', '6']
+            cmd = [str(self.spack_exe), '-e', env_path, 'install', '--jobs', '6']
             
             if self.logger:
                 self.logger.info(f"Starting interactive spack install: {' '.join(cmd)}")

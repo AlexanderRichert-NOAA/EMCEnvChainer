@@ -1152,12 +1152,14 @@ class TestSpackManager:
         # Verify Popen was called correctly
         mock_popen.assert_called_once()
         call_args = mock_popen.call_args
-        assert call_args[0][0] == [str(spack_manager.spack_exe), '-e', '/test/env', 'install']
+        assert call_args[0][0] == [str(spack_manager.spack_exe), '-e', '/test/env', 'install', '--jobs', '6']
         assert call_args[1]['stdout'] == subprocess.PIPE
         assert call_args[1]['stderr'] == subprocess.STDOUT
         assert call_args[1]['stdin'] == mock_stdin
         assert call_args[1]['text'] is True
         assert call_args[1]['bufsize'] == 1
+        assert 'env' in call_args[1]
+        assert call_args[1]['env']['SPACK_STACK_DIR'] == spack_manager.spack_stack_dir
         
         # Verify wait was called
         mock_process.wait.assert_called_once()
