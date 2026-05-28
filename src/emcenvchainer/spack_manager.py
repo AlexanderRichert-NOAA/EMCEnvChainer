@@ -39,6 +39,7 @@ class SpackManager:
         self.spack_root = Path(spack_root)
         self.config = config
         self.spack_exe = self.spack_root / "bin" / "spack"
+        self.spack_stack_dir = str(self.spack_root.parent.resolve())
         self.pending_recipes = {}  # Store recipes to be added when environment is created
         self.pending_checksums = []  # Store checksum operations to be performed when environment is created
         self.pending_git_commits = []  # Store git commit operations to be performed when environment is created
@@ -118,6 +119,7 @@ class SpackManager:
         Args:
             args: Command arguments
             cwd: Working directory
+            vars: Additional environment variables to set
             
         Returns:
             CompletedProcess result
@@ -132,10 +134,17 @@ class SpackManager:
         
         try:
             env = os.environ.copy()
-            for key in vars.keys():
-                env[key] = vars[key]
+            
+            # Always set SPACK_STACK_DIR for all Spack commands
+            env['SPACK_STACK_DIR'] = self.spack_stack_dir
+            
+            # Apply additional environment variables
+            for key, value in vars.items():
                 if key == "SPACK_ENV":
                     env[key] = ""
+                else:
+                    env[key] = value
+            
             result = subprocess.run(
                 cmd,
                 cwd=cwd,
@@ -358,15 +367,9 @@ class SpackManager:
                 self._log_and_print(f"Running spack checksum for {package_name}@{version}...")
                 
                 # Run spack checksum command in the environment context
-                cmd = [str(self.spack_exe), '-e', env_path, 'checksum', '--add-to-package', package_name, version]
-                edit_env = os.environ.copy()
-                edit_env['EDITOR'] = 'echo' # Make it non-interactive, as we will edit it later
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=150,
-                    env=edit_env,
+                result = self._run_spack_command(
+                    ['-e', env_path, 'checksum', '--add-to-package', package_name, version],
+                    vars={'EDITOR': 'echo'}  # Make it non-interactive, as we will edit it later
                 )
                 
                 if result.returncode == 0:
@@ -1009,10 +1012,8 @@ class SpackManager:
         if cache_key in self._available_packages_cache:
             return self._available_packages_cache[cache_key]
 
-        spack_stack_dir = os.path.abspath(os.path.join(normalized_env_path, "../../"))
         result = self._run_spack_command(
             ['-e', normalized_env_path, 'find', '--format', '{name}'],
-            vars={"SPACK_STACK_DIR": spack_stack_dir},
         )
         if result.returncode != 0:
             error_msg = "Failed to list packages with `spack find --format {name}`"
@@ -1587,7 +1588,6 @@ class SpackManager:
         package_candidates: Dict[str, List[Dict[str, str]]] = {}
         
         try:
-            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
             requested_versions = {
                 pkg["name"]: pkg["current_version"]
                 for pkg in packages
@@ -1611,7 +1611,7 @@ class SpackManager:
                 '-e', str(upstream_env_path), 
                 'find', 
                 '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}:EXTERNAL:{external}'
-            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+            ])
 
             if result.returncode != 0 or not result.stdout.strip():
                 if self.logger:
@@ -1734,14 +1734,13 @@ class SpackManager:
         candidates: Dict[str, List[Dict[str, str]]] = {}
 
         try:
-            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
             result = self._run_spack_command([
                 '-e', str(upstream_env_path),
                 'find',
                 '--deps',
                 '--format', '{name}:VERSION:{version}:VARIANTS:{variants}:FLAGS:{compiler_flags}:EXTERNAL:{external}',
                 metapackage_name,
-            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+            ])
 
             if result.returncode != 0 or not result.stdout.strip():
                 return candidates
@@ -1777,13 +1776,12 @@ class SpackManager:
         hashes = []
         
         try:
-            SPACK_STACK_DIR = os.path.abspath(os.path.join(upstream_env_path, "../../"))
             result = self._run_spack_command([
                 '-e', str(upstream_env_path),
                 'find',
                 '--format', '{hash:7}:SPEC:{name}{@version}{variants}',
                 package_name
-            ], vars={"SPACK_STACK_DIR": SPACK_STACK_DIR})
+            ])
             
             if result.returncode == 0 and result.stdout.strip():
                 for line in result.stdout.strip().split('\n'):
