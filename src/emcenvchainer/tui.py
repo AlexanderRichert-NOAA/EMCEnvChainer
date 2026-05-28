@@ -1563,10 +1563,12 @@ class EmcEnvChainerTUI:
         def _build_label(idx: int) -> str:
             base = base_option_labels[idx] if idx < len(base_option_labels) else options[idx]
             if idx in removed_items:
-                base = base.replace("📦 ", "❌ ", 1)
+                base = base.replace("📦 ", "⊘  ", 1)
             elif idx in buildable_false_items:
                 base = base.replace("📦 ", "⛔ ", 1)
             suffixes = []
+            if idx in removed_items:
+                suffixes.append("SKIPPED - will not be installed")
             if idx in buildable_false_items:
                 suffixes.append("not buildable (only use an upstream spec)")
             lock = locks.get(idx)
@@ -1627,7 +1629,7 @@ class EmcEnvChainerTUI:
 
         additional_packages: List[Dict] = []
         extra_instructions: List[str] = [
-            "'d' to toggle removal of highlighted package from environment",
+            "'d' to skip/exclude highlighted package from installation (will not be installed)",
             "'b' to toggle buildable:false for highlighted package",
             "'l' to toggle upstream lock for highlighted package",
             "'L' to lock all packages to their first upstream spec",
