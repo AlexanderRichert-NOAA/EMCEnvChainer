@@ -815,6 +815,10 @@ class SpackManager:
             if self.logger:
                 self.logger.info(f"Starting interactive spack install: {' '.join(cmd)}")
             
+            # Setup environment with SPACK_STACK_DIR
+            env = os.environ.copy()
+            env['SPACK_STACK_DIR'] = self.spack_stack_dir
+            
             # Use Popen for real-time output capture and stdin pass-through
             process = subprocess.Popen(
                 cmd,
@@ -822,7 +826,8 @@ class SpackManager:
                 stderr=subprocess.STDOUT,  # Combine stderr with stdout
                 stdin=sys.stdin,  # Pass through stdin for user interaction
                 text=True,
-                bufsize=1  # Line buffering
+                bufsize=1,  # Line buffering
+                env=env
             )
             
             # Capture output in a separate thread while allowing terminal interaction
