@@ -284,6 +284,10 @@ class ModelApplication:
                 'pattern': r'load\(pathJoin\("([^"]+)",\s*([^)]+)\)\)',
                 'handler': self._handle_pathjoin_upgradable_pattern
             },
+            'load_pathjoin_getenv': {
+                'pattern': r'load\(pathJoin\("([^"]+)",\s*os\.getenv\("[^"]+"\)\s*or\s*"([^"]+)"\)\)',
+                'handler': self._handle_load_pathjoin_getenv_pattern
+            },
             'version_variable': {
                 'pattern': r'([a-zA-Z0-9_-]+)_ver\s*=\s*os\.getenv\("[^"]+"\)\s*or\s*"([^"]+)"',
                 'handler': self._handle_version_variable_pattern

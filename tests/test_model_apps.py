@@ -121,6 +121,43 @@ export stack_python_ver=3.11.7
         assert 'stack-python' not in package_versions
 
     @patch('requests.get')
+    def test_get_upgradable_packages_rrfs_patterns(self, mock_get):
+        """Test parsing upgradable packages from RRFS-style common module with inline os.getenv."""
+        mock_response = Mock()
+        mock_response.text = '''-- RRFS Common Module File
+load(pathJoin("jasper", os.getenv("jasper_ver") or "2.0.32"))
+load(pathJoin("libpng", os.getenv("libpng_ver") or "1.6.37"))
+load(pathJoin("zlib", os.getenv("zlib_ver") or "1.2.13"))
+load(pathJoin("hdf5", os.getenv("hdf5_ver") or "1.14.3"))
+load(pathJoin("stack-intel", os.getenv("stack_intel_ver") or "2021.5.0"))
+'''
+        mock_response.raise_for_status.return_value = None
+        mock_get.return_value = mock_response
+        
+        config = {
+            "common_module_url": "https://example.com/rrfs_common.lua"
+        }
+        
+        app = ModelApplication("rrfs_app", config, "hera")
+        packages = app.get_upgradable_packages()
+        
+        # Should find packages from RRFS patterns
+        package_names = {pkg['name'] for pkg in packages}
+        assert 'jasper' in package_names
+        assert 'libpng' in package_names
+        assert 'hdf5' in package_names
+        # zlib and stack-intel should be filtered out
+        assert 'zlib' not in package_names
+        assert 'stack-intel' not in package_names
+        
+        # Check specific package details
+        jasper_pkg = next(pkg for pkg in packages if pkg['name'] == 'jasper')
+        assert jasper_pkg['version'] == "2.0.32"
+        
+        hdf5_pkg = next(pkg for pkg in packages if pkg['name'] == 'hdf5')
+        assert hdf5_pkg['version'] == "1.14.3"
+
+    @patch('requests.get')
     def test_extract_install_path_success(self, mock_get):
         """Test successful extraction of install path from module file."""
         # Mock response for module file with install path
