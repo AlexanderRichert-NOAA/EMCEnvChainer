@@ -3,15 +3,43 @@
 
 import sys
 import os
+import argparse
 from pathlib import Path
+
+try:
+    from importlib.metadata import version
+except ImportError:
+    # Fallback for Python < 3.8
+    from importlib_metadata import version
 
 from .tui import EmcEnvChainerTUI
 from .platform import PlatformDetector
 from .config import Config
 
 
+def get_version():
+    """Get the package version."""
+    try:
+        return version("emcenvchainer")
+    except Exception:
+        return "unknown"
+
+
 def main():
     """Main entry point for the emcenvchainer utility."""
+    parser = argparse.ArgumentParser(
+        description="EMC spack-stack Environment Chainer - Create chained Spack environments",
+        prog="emcenvchainer"
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {get_version()}"
+    )
+    
+    # Parse arguments (currently only --version, but extensible for future options)
+    parser.parse_args()
+    
     try:
         # Initialize configuration
         config = Config()
