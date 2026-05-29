@@ -104,6 +104,16 @@ class Config:
                     "name": "Orion (RDHPCS/MSU)", 
                     "spack_stack_path": "/apps/contrib/spack-stack",
                     "hostname_patterns": [r"Orion-login.*\.HPC.MsState.Edu"],
+                    "metamodule_patches": [
+                        {
+                            "pattern": r'load\("spack-managed-x86-64_v3"\)',
+                            "replacement": 'prepend_path("MODULEPATH", "/apps/spack-managed-x86_64_v3-v1.0/modulefiles/Core:/apps/other/modulefiles:/apps/containers/modulefiles:/apps/licensed/modulefiles")'
+                        },
+                        {
+                            "pattern": r'prereq("spack-managed-x86-64_v3")',
+                            "replacement": ""
+                        }
+                    ],
                     "model_applications": {
                         "ufs_weather_model": {
                             "module_url_templates": [
@@ -143,6 +153,16 @@ class Config:
                     "name": "Hercules (RDHPCS/MSU)",
                     "spack_stack_path": "/apps/contrib/spack-stack", 
                     "hostname_patterns": [r"Hercules-login.*\.HPC.MsState.Edu"],
+                    "metamodule_patches": [
+                        {
+                            "pattern": r'load\("spack-managed-x86-64_v3"\)',
+                            "replacement": 'prepend_path("MODULEPATH", "/apps/spack-managed-x86_64_v3-v1.0/modulefiles/Core:/apps/other/modulefiles:/apps/containers/modulefiles:/apps/licensed/modulefiles")'
+                        },
+                        {
+                            "pattern": r'prereq("spack-managed-x86-64_v3")',
+                            "replacement": ""
+                        }
+                    ],
                     "model_applications": {
                         "ufs_weather_model": {
                             "module_url_templates": [

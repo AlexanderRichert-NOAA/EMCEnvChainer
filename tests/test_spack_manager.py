@@ -3849,3 +3849,280 @@ spack:
         pkgs = cfg["spack"].get("packages", {})
 
         assert pkgs.get("esmf", {}).get("buildable") is not False
+
+    # Tests for metamodule patching functionality
+
+    def test_extract_metamodule_paths(self, spack_manager):
+        """Test extraction of metamodule paths from spack output."""
+        output = """
+==> Setting up meta-modules...
+  ... writing /home/user/scotch-test/install/modulefiles/oneapi/2024.2.1/stack-intel-oneapi-mpi/2021.13.lua
+    ... writing /home/user/scotch-test/install/modulefiles/Core/stack-oneapi/2024.2.1.lua
+  ... writing /home/user/scotch-test/install/modulefiles/gcc/11.4.0/stack-openmpi/4.1.6.lua
+"""
+        
+        paths = spack_manager._extract_metamodule_paths(output)
+        
+        assert len(paths) == 3
+        assert "/home/user/scotch-test/install/modulefiles/oneapi/2024.2.1/stack-intel-oneapi-mpi/2021.13.lua" in paths
+        assert "/home/user/scotch-test/install/modulefiles/Core/stack-oneapi/2024.2.1.lua" in paths
+        assert "/home/user/scotch-test/install/modulefiles/gcc/11.4.0/stack-openmpi/4.1.6.lua" in paths
+
+    def test_extract_metamodule_paths_empty(self, spack_manager):
+        """Test extraction with no metamodule paths in output."""
+        output = """
+==> Some other output
+==> No writing lines here
+"""
+        
+        paths = spack_manager._extract_metamodule_paths(output)
+        
+        assert len(paths) == 0
+
+    def test_extract_metamodule_paths_with_logging(self, spack_manager, tmp_path):
+        """Test extraction logs properly when logger is set up."""
+        spack_manager.setup_logging(str(tmp_path))
+        
+        output = """
+  ... writing /test/path1.lua
+  ... writing /test/path2.lua
+"""
+        
+        paths = spack_manager._extract_metamodule_paths(output)
+        
+        assert len(paths) == 2
+        assert spack_manager.logger is not None
+
+    def test_patch_metamodules_basic(self, spack_manager, tmp_path):
+        """Test basic metamodule patching functionality."""
+        # Create test metamodule files
+        module1 = tmp_path / "module1.lua"
+        module1.write_text("load('problematic-module')\nload('other-module')\n")
+        
+        module2 = tmp_path / "module2.lua"
+        module2.write_text("load('problematic-module')\nload('good-module')\n")
+        
+        metamodule_paths = [str(module1), str(module2)]
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"load\('problematic-module'\)",
+                    "replacement": "load('fixed-module')"
+                }
+            ]
+        }
+        
+        spack_manager._patch_metamodules(metamodule_paths, platform_config)
+        
+        # Verify patches were applied
+        assert "load('fixed-module')" in module1.read_text()
+        assert "load('problematic-module')" not in module1.read_text()
+        assert "load('other-module')" in module1.read_text()
+        
+        assert "load('fixed-module')" in module2.read_text()
+        assert "load('problematic-module')" not in module2.read_text()
+        assert "load('good-module')" in module2.read_text()
+
+    def test_patch_metamodules_multiple_patterns(self, spack_manager, tmp_path):
+        """Test applying multiple patches to metamodules."""
+        module = tmp_path / "module.lua"
+        module.write_text("line1: bad_value\nline2: another_bad\nline3: good\n")
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"bad_value",
+                    "replacement": "good_value"
+                },
+                {
+                    "pattern": r"another_bad",
+                    "replacement": "another_good"
+                }
+            ]
+        }
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        content = module.read_text()
+        assert "good_value" in content
+        assert "another_good" in content
+        assert "bad_value" not in content
+        assert "another_bad" not in content
+
+    def test_patch_metamodules_no_patches_config(self, spack_manager, tmp_path):
+        """Test patching when no patches are configured."""
+        module = tmp_path / "module.lua"
+        original_content = "load('some-module')\n"
+        module.write_text(original_content)
+        
+        platform_config = {}
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        # Content should remain unchanged
+        assert module.read_text() == original_content
+
+    def test_patch_metamodules_empty_patches_list(self, spack_manager, tmp_path):
+        """Test patching with empty patches list."""
+        module = tmp_path / "module.lua"
+        original_content = "load('some-module')\n"
+        module.write_text(original_content)
+        
+        platform_config = {
+            "metamodule_patches": []
+        }
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        # Content should remain unchanged
+        assert module.read_text() == original_content
+
+    def test_patch_metamodules_file_not_found(self, spack_manager, caplog):
+        """Test patching when metamodule file doesn't exist."""
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"test",
+                    "replacement": "fixed"
+                }
+            ]
+        }
+        
+        # Should not raise an exception, just log warning
+        spack_manager._patch_metamodules(["/nonexistent/file.lua"], platform_config)
+        # Function should complete without error
+
+    def test_patch_metamodules_invalid_patch_config(self, spack_manager, tmp_path):
+        """Test patching with invalid patch configuration."""
+        module = tmp_path / "module.lua"
+        original_content = "load('some-module')\n"
+        module.write_text(original_content)
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"test"
+                    # Missing replacement
+                },
+                {
+                    # Missing pattern
+                    "replacement": "fixed"
+                }
+            ]
+        }
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        # Content should remain unchanged due to invalid config
+        assert module.read_text() == original_content
+
+    def test_patch_metamodules_regex_special_chars(self, spack_manager, tmp_path):
+        """Test patching with regex special characters."""
+        module = tmp_path / "module.lua"
+        module.write_text("prepend_path('MODULEPATH', '/path/to/modules')\n")
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"prepend_path\('MODULEPATH', '([^']+)'\)",
+                    "replacement": r"prepend_path('MODULEPATH', '\1/custom')"
+                }
+            ]
+        }
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        content = module.read_text()
+        assert "prepend_path('MODULEPATH', '/path/to/modules/custom')" in content
+
+    def test_patch_metamodules_with_logging(self, spack_manager, tmp_path):
+        """Test patching with logging enabled."""
+        spack_manager.setup_logging(str(tmp_path))
+        
+        module = tmp_path / "module.lua"
+        module.write_text("load('bad-module')\n")
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"bad-module",
+                    "replacement": "good-module"
+                }
+            ]
+        }
+        
+        spack_manager._patch_metamodules([str(module)], platform_config)
+        
+        assert "good-module" in module.read_text()
+        assert spack_manager.logger is not None
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_with_patching(self, mock_log_print, mock_run_spack, spack_manager, tmp_path):
+        """Test refresh_modules integrates patching correctly."""
+        env_path = str(tmp_path / "test_env")
+        os.makedirs(env_path, exist_ok=True)
+        
+        # Create a mock metamodule file
+        install_path = tmp_path / "test_env" / "install" / "modulefiles" / "Core"
+        install_path.mkdir(parents=True, exist_ok=True)
+        
+        module_path = tmp_path / "test_module.lua"
+        module_path.write_text("load('problematic-module')\n")
+        
+        # Mock spack commands
+        mock_results = [
+            Mock(returncode=0, stdout="", stderr=""),  # config add
+            Mock(returncode=0, stdout="", stderr=""),  # module lmod refresh
+            Mock(
+                returncode=0, 
+                stdout=f"  ... writing {module_path}\n",
+                stderr=""
+            )  # stack setup-meta-modules
+        ]
+        mock_run_spack.side_effect = mock_results
+        
+        platform_config = {
+            "metamodule_patches": [
+                {
+                    "pattern": r"load\('problematic-module'\)",
+                    "replacement": "load('fixed-module')"
+                }
+            ]
+        }
+        
+        result = spack_manager.refresh_modules(env_path, platform_config)
+        
+        # Verify the module was patched
+        assert "load('fixed-module')" in module_path.read_text()
+        assert "load('problematic-module')" not in module_path.read_text()
+        
+        # Verify return value
+        assert "modulefiles/Core" in result
+
+    @patch.object(SpackManager, '_run_spack_command')
+    @patch.object(SpackManager, '_log_and_print')
+    def test_refresh_modules_without_platform_config(self, mock_log_print, mock_run_spack, spack_manager, tmp_path):
+        """Test refresh_modules works without platform_config (no patching)."""
+        env_path = str(tmp_path / "test_env")
+        os.makedirs(env_path, exist_ok=True)
+        
+        install_path = tmp_path / "test_env" / "install" / "modulefiles" / "Core"
+        install_path.mkdir(parents=True, exist_ok=True)
+        
+        # Mock spack commands
+        mock_results = [
+            Mock(returncode=0, stdout="", stderr=""),  # config add
+            Mock(returncode=0, stdout="", stderr=""),  # module lmod refresh
+            Mock(returncode=0, stdout="", stderr="")   # stack setup-meta-modules
+        ]
+        mock_run_spack.side_effect = mock_results
+        
+        # Call without platform_config
+        result = spack_manager.refresh_modules(env_path)
+        
+        # Should complete without error
+        assert "modulefiles/Core" in result
+
+

@@ -1934,7 +1934,7 @@ class EmcEnvChainerTUI:
 
             # Refresh modules
             menu.display_info("Refreshing modules...", wait_for_key=False)
-            modulefiles_path = spack_manager.refresh_modules(env_path)
+            modulefiles_path = spack_manager.refresh_modules(env_path, self.platform.config)
             
             # Final success message
             success_msg = f"Environment created successfully!\n"

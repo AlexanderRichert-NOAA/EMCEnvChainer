@@ -3071,8 +3071,8 @@ class TestEmcEnvChainerTUI:
         # Verify concretization
         mock_spack_manager.concretize_environment.assert_called_once_with("/test/env/path")
         
-        # Verify modules refreshed
-        mock_spack_manager.refresh_modules.assert_called_once_with("/test/env/path")
+        # Verify modules refreshed (now includes platform config)
+        mock_spack_manager.refresh_modules.assert_called_once_with("/test/env/path", tui_app.platform.config)
         
         # Verify success message displayed
         success_calls = [call for call in mock_menu.display_info.call_args_list 

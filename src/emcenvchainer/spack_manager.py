@@ -881,11 +881,12 @@ class SpackManager:
             print(f"Install failed: {e}")
             return False
     
-    def refresh_modules(self, env_path: str) -> str:
+    def refresh_modules(self, env_path: str, platform_config: Optional[Dict] = None) -> str:
         """Refresh Lmod modules for the environment.
         
         Args:
             env_path: Path to environment
+            platform_config: Optional platform configuration for metamodule patching
             
         Returns:
             Path to modulefiles directory
@@ -915,7 +916,7 @@ class SpackManager:
             
             self._log_and_print("Setting up meta-modules...")
             
-            # Run spack stack setup-meta-modules
+            # Run spack stack setup-meta-modules and capture output
             result = self._run_spack_command(['-e', env_path, 'stack', 'setup-meta-modules'])
             
             if result.returncode != 0:
@@ -923,6 +924,11 @@ class SpackManager:
                 if self.logger:
                     self.logger.error(error_msg)
                 raise RuntimeError(error_msg)
+            
+            # Extract metamodule paths from output and patch them if needed
+            metamodule_paths = self._extract_metamodule_paths(result.stdout)
+            if metamodule_paths and platform_config:
+                self._patch_metamodules(metamodule_paths, platform_config)
             
             # Return modulefiles path
             install_path = Path(env_path) / "install"
@@ -937,6 +943,85 @@ class SpackManager:
             if self.logger:
                 self.logger.error(error_msg)
             raise RuntimeError(error_msg)
+    
+    def _extract_metamodule_paths(self, output: str) -> List[str]:
+        """Extract metamodule file paths from spack stack setup-meta-modules output.
+        
+        Args:
+            output: stdout from spack stack setup-meta-modules command
+            
+        Returns:
+            List of absolute paths to generated metamodule files
+        """
+        paths = []
+        # Match lines like: "  ... writing /path/to/module.lua"
+        pattern = r'\.\.\.\s+writing\s+(\S+\.lua)'
+        
+        for line in output.splitlines():
+            match = re.search(pattern, line)
+            if match:
+                module_path = match.group(1)
+                paths.append(module_path)
+                if self.logger:
+                    self.logger.debug(f"Found metamodule: {module_path}")
+        
+        if self.logger:
+            self.logger.info(f"Extracted {len(paths)} metamodule paths")
+        
+        return paths
+    
+    def _patch_metamodules(self, metamodule_paths: List[str], platform_config: Dict) -> None:
+        """Apply regex-based patches to metamodule files.
+        
+        Args:
+            metamodule_paths: List of paths to metamodule files
+            platform_config: Platform configuration containing metamodule_patches
+        """
+        patches = platform_config.get("metamodule_patches", [])
+        if not patches:
+            return
+        
+        self._log_and_print(f"Applying {len(patches)} patch(es) to {len(metamodule_paths)} metamodule(s)...")
+        
+        for module_path in metamodule_paths:
+            module_file = Path(module_path)
+            if not module_file.exists():
+                if self.logger:
+                    self.logger.warning(f"Metamodule file not found: {module_path}")
+                continue
+            
+            try:
+                # Read the module file
+                content = module_file.read_text()
+                original_content = content
+                
+                # Apply each patch
+                for patch in patches:
+                    pattern = patch.get("pattern")
+                    replacement = patch.get("replacement")
+                    
+                    if not pattern or replacement is None:
+                        if self.logger:
+                            self.logger.warning(f"Invalid patch configuration: {patch}")
+                        continue
+                    
+                    # Apply regex substitution
+                    content = re.sub(pattern, replacement, content)
+                
+                # Write back if changed
+                if content != original_content:
+                    module_file.write_text(content)
+                    if self.logger:
+                        self.logger.info(f"Patched metamodule: {module_path}")
+                    
+            except Exception as e:
+                error_msg = f"Failed to patch {module_path}: {e}"
+                if self.logger:
+                    self.logger.error(error_msg)
+                # Continue with other files even if one fails
+                print(f"Warning: {error_msg}")
+        
+        self._log_and_print("✓ Metamodule patching completed")
     
     def check_package_version_exists(self, package_name: str, version: str) -> bool:
         """Check if a specific package version exists in the current Spack installation.
