@@ -211,6 +211,30 @@ load("netcdf/4.9.2")
         
         assert result is None
 
+    def test_handle_load_pathjoin_getenv_pattern(self):
+        """Test _handle_load_pathjoin_getenv_pattern method for RRFS-style loads."""
+        config = {"module_url_templates": ["http://example.com/test.lua"]}
+        app = ModelApplication("test_app", config, "test_platform")
+        
+        match = Mock()
+        match.group.side_effect = lambda x: {1: 'jasper', 2: '2.0.32'}[x]
+        
+        result = app._handle_load_pathjoin_getenv_pattern(match, "")
+        
+        assert result == ('jasper', '2.0.32')
+
+    def test_handle_load_pathjoin_getenv_pattern_filters_stack(self):
+        """Test _handle_load_pathjoin_getenv_pattern filters stack packages."""
+        config = {"module_url_templates": ["http://example.com/test.lua"]}
+        app = ModelApplication("test_app", config, "test_platform")
+        
+        match = Mock()
+        match.group.side_effect = lambda x: {1: 'stack-intel', 2: '2021.5.0'}[x]
+        
+        result = app._handle_load_pathjoin_getenv_pattern(match, "")
+        
+        assert result is None
+
     def test_handle_ufs_table_pattern(self):
         """Test _handle_ufs_table_pattern method."""
         config = {"module_url_templates": ["http://example.com/test.lua"]}
@@ -299,6 +323,17 @@ load("another_pkg/5.0.0")
 ''',
             [('complex_pkg', '3.1.4'), ('another_pkg', '5.0.0')],
             []
+        ),
+        (
+            # Test RRFS-style inline os.getenv patterns
+            '''
+load(pathJoin("jasper", os.getenv("jasper_ver") or "2.0.32"))
+load(pathJoin("zlib", os.getenv("zlib_ver") or "1.2.13"))
+load(pathJoin("libpng", os.getenv("libpng_ver") or "1.6.37"))
+load(pathJoin("stack-intel", os.getenv("stack_intel_ver") or "2021.5.0"))
+''',
+            [('jasper', '2.0.32'), ('libpng', '1.6.37')],
+            ['zlib', 'stack-intel']
         )
     ])
     def test_parse_dependencies_pattern_handling(self, mock_get, module_content, expected_packages, excluded_packages):

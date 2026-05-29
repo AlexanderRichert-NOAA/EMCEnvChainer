@@ -112,6 +112,10 @@ class ModelApplication:
                 'pattern': r'load\((?:pathJoin\("([^"]+)",\s*([^)]+)\)|\"([^\"]+)\")\)',
                 'handler': self._handle_unified_load_pattern
             },
+            'load_pathjoin_getenv': {
+                'pattern': r'load\(pathJoin\("([^"]+)",\s*os\.getenv\("[^"]+"\)\s*or\s*"([^"]+)"\)\)',
+                'handler': self._handle_load_pathjoin_getenv_pattern
+            },
             'version_variable': {
                 'pattern': r'([a-zA-Z0-9_]+)_ver\s*=\s*os\.getenv\("[^"]+"\)\s*or\s*"([^"]+)"',
                 'handler': self._handle_version_variable_pattern
@@ -187,6 +191,17 @@ class ModelApplication:
                     return (package_name, version)
             
             return None
+
+    def _handle_load_pathjoin_getenv_pattern(self, match, module_content):
+        """Handle load(pathJoin("package", os.getenv("package_ver") or "version")) patterns."""
+        package_name = match.group(1).lower()
+        version = match.group(2)
+        
+        # Skip stack-* packages and ufs_common
+        if package_name.startswith("stack-") or package_name in ["ufs_common", "zlib"]:
+            return None
+        
+        return (package_name, version)
 
     def _handle_version_variable_pattern(self, match, module_content):
         """Handle package_ver=os.getenv("package_ver") or "version" patterns."""
