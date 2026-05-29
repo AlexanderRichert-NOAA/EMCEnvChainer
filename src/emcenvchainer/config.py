@@ -54,18 +54,6 @@ class Config:
                     "name": "AQM-utils",
                     "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
-                },
-                "rrfs_nco": {
-                    "name": "RRFS (rrfs-nco)",
-                    "spack_metapackage": "rrfs-workflow-env",
-                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/rrfs_common.lua",
-                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
-                },
-                "rrfs_dev_sci": {
-                    "name": "RRFS (dev-sci)",
-                    "spack_metapackage": "rrfs-workflow-env",
-                    "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/rrfs_common.lua",
-                    "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 }
             },
             "platforms": {
@@ -158,16 +146,6 @@ class Config:
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_orion.intel.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_orion.intelllvm.lua"
                             ]
-                        },
-                        "rrfs_nco": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/wflow_orion.lua"
-                            ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_orion.lua"
-                            ]
                         }
                     }
                 },
@@ -219,16 +197,6 @@ class Config:
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_hercules.intelllvm.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_hercules.gnu.lua"
                             ]
-                        },
-                        "rrfs_nco": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/wflow_hercules.lua"
-                            ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_hercules.lua"
-                            ]
                         }
                     }
                 },
@@ -257,16 +225,6 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_jet.intel.lua"
                             ]
-                        },
-                        "rrfs_nco": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/wflow_jet.lua"
-                            ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_jet.lua"
-                            ]
                         }
                     }
                 },
@@ -284,11 +242,6 @@ class Config:
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac5.intel.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac5.intelllvm.lua"
-                            ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_gaea.lua"
                             ]
                         }
                     }
@@ -328,11 +281,6 @@ class Config:
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac6.intel.lua",
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_gaeac6.intelllvm.lua"
                             ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_gaea.lua"
-                            ]
                         }
                     }
                 },
@@ -354,16 +302,6 @@ class Config:
                         "aqm_utils": {
                             "module_url_templates": [
                                 "https://raw.githubusercontent.com/NOAA-EMC/AQM-utils/develop/modulefiles/aqm-utils_acorn.intel.lua"
-                            ]
-                        },
-                        "rrfs_nco": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/wflow_wcoss2.lua"
-                            ]
-                        },
-                        "rrfs_dev_sci": {
-                            "module_url_templates": [
-                                "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/wflow_wcoss2.lua"
                             ]
                         }
                     }
