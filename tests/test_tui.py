@@ -2797,6 +2797,181 @@ class TestEmcEnvChainerTUI:
         assert "📦" not in captured_options[0]
         assert "not buildable" in captured_options[0]
 
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_l_key_locks_to_matching_version_first(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that 'l' key locks to upstream spec matching model version first."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        # Mock upstream hashes - version 4.9.0 should be ordered first
+        mock_spack_manager.get_upstream_package_hashes.return_value = [
+            {'hash': 'abc123', 'spec': 'netcdf-c@4.8.0 +mpi'},  # Different version
+            {'hash': 'def456', 'spec': 'netcdf-c@4.9.0 +mpi'},  # Matches model version
+            {'hash': 'ghi789', 'spec': 'netcdf-c@4.9.1 +mpi'},  # Different version
+        ]
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_lock_and_capture(options, **kwargs):
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('l')]()
+            captured_options.extend(options)
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_lock_and_capture
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager, upstream_path="/test/upstream"
+        )
+
+        # Verify the locked spec is the one matching the model version (4.9.0)
+        assert len(captured_options) == 1
+        assert "🔒" in captured_options[0]
+        assert "def456" in captured_options[0]  # Hash of matching version
+        assert "netcdf-c@4.9.0" in captured_options[0]
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_l_key_shows_spec_count_indicator(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that locked package displays spec count like '(1/3)' when multiple specs available."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        # Mock multiple upstream hashes
+        mock_spack_manager.get_upstream_package_hashes.return_value = [
+            {'hash': 'abc123', 'spec': 'hdf5@1.14.0 +mpi'},
+            {'hash': 'def456', 'spec': 'hdf5@1.14.1 +mpi'},
+            {'hash': 'ghi789', 'spec': 'hdf5@1.14.2 +mpi'},
+        ]
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_lock_and_capture(options, **kwargs):
+            mock_radio.current_row = 0
+            # Lock once (should show 1/3)
+            kwargs["key_actions"][ord('l')]()
+            captured_options.append(options[0])
+            # Toggle to next spec (should show 2/3)
+            kwargs["key_actions"][ord('l')]()
+            captured_options.append(options[0])
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_lock_and_capture
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager, upstream_path="/test/upstream"
+        )
+
+        # Verify count indicator appears in labels
+        assert len(captured_options) == 2
+        assert "(1/3)" in captured_options[0]
+        assert "abc123" in captured_options[0]
+        assert "(2/3)" in captured_options[1]
+        assert "def456" in captured_options[1]
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_l_key_no_count_for_single_spec(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that spec count is not shown when only one upstream spec exists."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        # Mock single upstream hash
+        mock_spack_manager.get_upstream_package_hashes.return_value = [
+            {'hash': 'abc123', 'spec': 'netcdf-c@4.9.0 +mpi'},
+        ]
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_lock_and_capture(options, **kwargs):
+            mock_radio.current_row = 0
+            kwargs["key_actions"][ord('l')]()
+            captured_options.extend(options)
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_lock_and_capture
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager, upstream_path="/test/upstream"
+        )
+
+        # Verify no count indicator when only one spec
+        assert len(captured_options) == 1
+        assert "🔒" in captured_options[0]
+        assert "(1/1)" not in captured_options[0]  # Should not show count for single spec
+        assert "abc123" in captured_options[0]
+
+    @patch('emcenvchainer.tui.RadioButtonMenu')
+    def test_select_packages_L_key_locks_all_to_matching_versions(self, mock_radio_class, tui_app, mock_stdscr):
+        """Test that 'L' key locks all packages to their matching upstream versions."""
+        mock_radio = Mock()
+        mock_radio_class.return_value = mock_radio
+
+        mock_spack_manager = Mock()
+        mock_spack_manager.get_canonical_package_name.side_effect = lambda name, path: name
+        
+        # Mock batch upstream hashes
+        def mock_get_all_hashes(env_path):
+            return {
+                'netcdf-c': [
+                    {'hash': 'aaa111', 'spec': 'netcdf-c@4.8.0 +mpi'},
+                    {'hash': 'bbb222', 'spec': 'netcdf-c@4.9.0 +mpi'},  # Matches model
+                ],
+                'hdf5': [
+                    {'hash': 'ccc333', 'spec': 'hdf5@1.14.0 +mpi'},  # Matches model
+                    {'hash': 'ddd444', 'spec': 'hdf5@1.14.1 +mpi'},
+                ],
+            }
+        
+        mock_spack_manager.get_all_upstream_package_hashes.side_effect = mock_get_all_hashes
+        mock_app = Mock()
+
+        all_packages = [
+            {"name": "netcdf-c", "current_version": "4.9.0", "type": "upgradable"},
+            {"name": "hdf5", "current_version": "1.14.0", "type": "dependency"},
+        ]
+
+        captured_options: list = []
+
+        def _display_menu_lock_all_and_capture(options, **kwargs):
+            kwargs["key_actions"][ord('L')]()
+            captured_options.extend(options)
+            return []
+
+        mock_radio.display_menu.side_effect = _display_menu_lock_all_and_capture
+
+        tui_app._select_packages_with_radio_buttons(
+            mock_stdscr, all_packages, mock_app, mock_spack_manager, upstream_path="/test/upstream"
+        )
+
+        # Verify both packages are locked to their matching versions
+        assert len(captured_options) == 2
+        # netcdf-c should be locked to 4.9.0 (matching version comes first)
+        assert "bbb222" in captured_options[0]
+        assert "netcdf-c@4.9.0" in captured_options[0]
+        # hdf5 should be locked to 1.14.0 (matching version comes first)
+        assert "ccc333" in captured_options[1]
+        assert "hdf5@1.14.0" in captured_options[1]
+
     
     @patch('emcenvchainer.tui.PackageSpecDialog')
     def test_get_package_specification_success(self, mock_dialog_class, tui_app, mock_stdscr):

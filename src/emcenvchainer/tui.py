@@ -1555,6 +1555,23 @@ class EmcEnvChainerTUI:
             pkg_name = display_packages[idx]["pkg"]["name"]
             try:
                 result = spack_manager.get_upstream_package_hashes(_upstream_env_path, pkg_name)
+                # Reorder results so that specs matching the model's version come first
+                if result and "current_version" in display_packages[idx]["pkg"]:
+                    model_version = display_packages[idx]["pkg"]["current_version"]
+                    matching = []
+                    non_matching = []
+                    for spec_dict in result:
+                        # Extract version from spec string (format: "package@version...")
+                        spec = spec_dict.get('spec', '')
+                        if '@' in spec:
+                            spec_version = spec.split('@')[1].split()[0]  # Get version before any spaces/variants
+                            if spec_version == model_version:
+                                matching.append(spec_dict)
+                            else:
+                                non_matching.append(spec_dict)
+                        else:
+                            non_matching.append(spec_dict)
+                    result = matching + non_matching
             except Exception:
                 result = []
             _hashes_cache[idx] = result
@@ -1576,7 +1593,18 @@ class EmcEnvChainerTUI:
                 spec = lock['spec']
                 if len(spec) > 80:
                     spec = spec[:77] + "..."
-                suffixes.append(f"🔒 {spec} /{lock['hash']}")
+                
+                # Build lock suffix with optional count indicator
+                lock_suffix = f"🔒 {spec} /{lock['hash']}"
+                hashes = _fetch_hashes_for(idx)
+                if len(hashes) > 1:
+                    try:
+                        lock_pos = next(i for i, h in enumerate(hashes) if h['hash'] == lock['hash']) + 1
+                        lock_suffix = f"🔒 ({lock_pos}/{len(hashes)}) {spec} /{lock['hash']}"
+                    except StopIteration:
+                        pass  # Use base lock_suffix without count
+                
+                suffixes.append(lock_suffix)
             if suffixes:
                 return f"{base} [{', '.join(suffixes)}]"
             return base
@@ -1603,12 +1631,29 @@ class EmcEnvChainerTUI:
             if _upstream_env_path and spack_manager:
                 try:
                     all_packages = spack_manager.get_all_upstream_package_hashes(_upstream_env_path)
-                    # Pre-populate the cache with the batch results
+                    # Pre-populate the cache with the batch results, applying reordering
                     for i in range(len(display_packages)):
                         if display_packages[i]["kind"] == "base":
                             pkg_name = display_packages[i]["pkg"]["name"]
                             if pkg_name in all_packages:
-                                _hashes_cache[i] = all_packages[pkg_name]
+                                result = all_packages[pkg_name]
+                                # Apply same reordering logic as _fetch_hashes_for
+                                if result and "current_version" in display_packages[i]["pkg"]:
+                                    model_version = display_packages[i]["pkg"]["current_version"]
+                                    matching = []
+                                    non_matching = []
+                                    for spec_dict in result:
+                                        spec = spec_dict.get('spec', '')
+                                        if '@' in spec:
+                                            spec_version = spec.split('@')[1].split()[0]
+                                            if spec_version == model_version:
+                                                matching.append(spec_dict)
+                                            else:
+                                                non_matching.append(spec_dict)
+                                        else:
+                                            non_matching.append(spec_dict)
+                                    result = matching + non_matching
+                                _hashes_cache[i] = result
                             else:
                                 _hashes_cache[i] = []
                 except Exception:
