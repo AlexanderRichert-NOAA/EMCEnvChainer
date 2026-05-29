@@ -3670,6 +3670,33 @@ cmake:VERSION:3.20.0:VARIANTS:+shared:FLAGS::EXTERNAL:True
         # hdf5 should have been added
         assert "hdf5:" in cfg["spack"]["packages"]
 
+    def test_filter_spec_variants(self, spack_manager):
+        """Test _filter_spec_variants removes build_system, build_type, and generator variants."""
+        # Test with all three variants
+        spec = "hdf5@1.10.7+mpi build_system=cmake build_type=Release generator=make"
+        result = spack_manager._filter_spec_variants(spec)
+        assert result == "hdf5@1.10.7+mpi"
+        
+        # Test with only build_system
+        spec = "netcdf@4.7.4+mpi build_system=autotools"
+        result = spack_manager._filter_spec_variants(spec)
+        assert result == "netcdf@4.7.4+mpi"
+        
+        # Test with build_type and generator
+        spec = "openmpi@4.1.0 build_type=Debug generator=ninja"
+        result = spack_manager._filter_spec_variants(spec)
+        assert result == "openmpi@4.1.0"
+        
+        # Test with other variants that should NOT be filtered
+        spec = "hdf5@1.10.7+mpi~fortran build_system=cmake"
+        result = spack_manager._filter_spec_variants(spec)
+        assert result == "hdf5@1.10.7+mpi~fortran"
+        
+        # Test with no variants to filter
+        spec = "hdf5@1.10.7+mpi~fortran"
+        result = spack_manager._filter_spec_variants(spec)
+        assert result == "hdf5@1.10.7+mpi~fortran"
+
     @patch.object(SpackManager, '_run_spack_command')
     def test_get_upstream_package_hashes(self, mock_run_cmd, spack_manager, tmp_path):
         """Test get_upstream_package_hashes retrieves hashes and specs correctly."""
@@ -3696,6 +3723,26 @@ xyz9876:SPEC:hdf5@1.10.6~mpi"""
         assert "find" in call_args
         assert "{hash:7}:SPEC:{name}{@version}{variants}" in call_args
         assert "hdf5" in call_args
+    
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_upstream_package_hashes_filters_build_variants(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_upstream_package_hashes filters out build_system, build_type, and generator variants."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock spack find output with build variants that should be filtered
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """abc1234:SPEC:hdf5@1.10.7+mpi build_system=cmake build_type=Release
+xyz9876:SPEC:hdf5@1.10.6~mpi build_system=autotools"""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_upstream_package_hashes("hdf5", str(upstream))
+        
+        # Should return specs with build variants filtered out
+        assert len(result) == 2
+        assert result[0] == {"hash": "abc1234", "spec": "hdf5@1.10.7+mpi"}
+        assert result[1] == {"hash": "xyz9876", "spec": "hdf5@1.10.6~mpi"}
     
     @patch.object(SpackManager, '_run_spack_command')
     def test_get_upstream_package_hashes_no_matches(self, mock_run_cmd, spack_manager, tmp_path):
@@ -3772,6 +3819,28 @@ openmpi:HASH:ghi9012:SPEC:openmpi@4.1.0"""
         # Should NOT include a specific package name to filter (gets all packages)
         assert "-e" in call_args
         assert str(upstream) in call_args
+
+    @patch.object(SpackManager, '_run_spack_command')
+    def test_get_all_upstream_package_hashes_filters_build_variants(self, mock_run_cmd, spack_manager, tmp_path):
+        """Test get_all_upstream_package_hashes filters out build_system, build_type, and generator variants."""
+        upstream = tmp_path / "upstream"
+        upstream.mkdir()
+        
+        # Mock spack find output with build variants that should be filtered
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = """hdf5:HASH:abc1234:SPEC:hdf5@1.10.7+mpi build_system=cmake build_type=Release
+netcdf:HASH:def5678:SPEC:netcdf@4.7.4+mpi~fortran build_system=autotools generator=make"""
+        mock_run_cmd.return_value = mock_result
+        
+        result = spack_manager.get_all_upstream_package_hashes(upstream)
+        
+        # Should return specs with build variants filtered out
+        assert len(result) == 2
+        assert "hdf5" in result
+        assert "netcdf" in result
+        assert result["hdf5"][0] == {"hash": "abc1234", "spec": "hdf5@1.10.7+mpi"}
+        assert result["netcdf"][0] == {"hash": "def5678", "spec": "netcdf@4.7.4+mpi~fortran"}
 
     @patch.object(SpackManager, '_run_spack_command')
     def test_get_all_upstream_package_hashes_empty(self, mock_run_cmd, spack_manager, tmp_path):

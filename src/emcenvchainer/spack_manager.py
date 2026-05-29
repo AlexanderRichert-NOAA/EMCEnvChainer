@@ -1856,6 +1856,23 @@ class SpackManager:
 
         return candidates
 
+    @staticmethod
+    def _filter_spec_variants(spec: str) -> str:
+        """Remove build_system, build_type, and generator variants from a spec string.
+        
+        Args:
+            spec: Full spec string with variants
+            
+        Returns:
+            Spec string with specified variants removed
+        """
+        # Remove build_system=..., build_type=..., and generator=... variants
+        # Variants are space-separated or appear at the end
+        spec = re.sub(r'\s+build_system=[^\s]+', '', spec)
+        spec = re.sub(r'\s+build_type=[^\s]+', '', spec)
+        spec = re.sub(r'\s+generator=[^\s]+', '', spec)
+        return spec
+
     def get_all_upstream_package_hashes(self, upstream_env_path: Path) -> Dict[str, List[Dict[str, str]]]:
         """Get all available concrete spec hashes from upstream environment in a single query.
         
@@ -1895,7 +1912,7 @@ class SpackManager:
                                     packages_map[package_name] = []
                                 packages_map[package_name].append({
                                     'hash': hash_part,
-                                    'spec': spec_part
+                                    'spec': self._filter_spec_variants(spec_part)
                                 })
                         
         except Exception as e:
@@ -1930,7 +1947,7 @@ class SpackManager:
                         hash_part, spec_part = line.split(':SPEC:', 1)
                         hashes.append({
                             'hash': hash_part.strip(),
-                            'spec': spec_part.strip()
+                            'spec': self._filter_spec_variants(spec_part.strip())
                         })
                         
         except Exception as e:
