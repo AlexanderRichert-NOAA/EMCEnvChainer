@@ -926,9 +926,8 @@ class SpackManager:
                 raise RuntimeError(error_msg)
             
             # Extract metamodule paths from output and patch them if needed
-            metamodule_paths = self._extract_metamodule_paths(result.stdout)
-            if metamodule_paths and platform_config:
-                self._patch_metamodules(metamodule_paths, platform_config)
+            metamodule_paths = self._extract_metamodule_paths(result.stderr)
+            self._patch_metamodules(metamodule_paths, platform_config)
             
             # Return modulefiles path
             install_path = Path(env_path) / "install"
@@ -955,7 +954,7 @@ class SpackManager:
         """
         paths = []
         # Match lines like: "  ... writing /path/to/module.lua"
-        pattern = r'\.\.\.\s+writing\s+(\S+\.lua)'
+        pattern = r'\s*\.\.\.\s+writing\s+(\S+\.lua)'
         
         for line in output.splitlines():
             match = re.search(pattern, line)
@@ -986,9 +985,10 @@ class SpackManager:
         for module_path in metamodule_paths:
             module_file = Path(module_path)
             if not module_file.exists():
+                error_msg = f"Metamodule file not found: {module_path}"
                 if self.logger:
-                    self.logger.warning(f"Metamodule file not found: {module_path}")
-                continue
+                    self.logger.error(error_msg)
+                raise FileNotFoundError(error_msg)
             
             try:
                 # Read the module file
@@ -1018,8 +1018,7 @@ class SpackManager:
                 error_msg = f"Failed to patch {module_path}: {e}"
                 if self.logger:
                     self.logger.error(error_msg)
-                # Continue with other files even if one fails
-                print(f"Warning: {error_msg}")
+                raise RuntimeError(error_msg) from e
         
         self._log_and_print("✓ Metamodule patching completed")
     

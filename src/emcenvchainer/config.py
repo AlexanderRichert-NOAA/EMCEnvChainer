@@ -110,7 +110,7 @@ class Config:
                             "replacement": 'prepend_path("MODULEPATH", "/apps/spack-managed-x86_64_v3-v1.0/modulefiles/Core:/apps/other/modulefiles:/apps/containers/modulefiles:/apps/licensed/modulefiles")'
                         },
                         {
-                            "pattern": r'prereq("spack-managed-x86-64_v3")',
+                            "pattern": r'prereq\("spack-managed-x86-64_v3"\)',
                             "replacement": ""
                         }
                     ],
