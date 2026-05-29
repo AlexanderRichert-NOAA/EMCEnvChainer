@@ -881,7 +881,7 @@ class SpackManager:
             print(f"Install failed: {e}")
             return False
     
-    def refresh_modules(self, env_path: str, platform_config: Optional[Dict] = None) -> str:
+    def refresh_modules(self, env_path: str, platform_config: Dict) -> str:
         """Refresh Lmod modules for the environment.
         
         Args:
