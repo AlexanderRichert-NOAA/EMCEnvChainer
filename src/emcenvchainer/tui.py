@@ -1561,14 +1561,9 @@ class EmcEnvChainerTUI:
                     matching = []
                     non_matching = []
                     for spec_dict in result:
-                        # Extract version from spec string (format: "package@version...")
                         spec = spec_dict.get('spec', '')
-                        if '@' in spec:
-                            spec_version = spec.split('@')[1].split()[0]  # Get version before any spaces/variants
-                            if spec_version == model_version:
-                                matching.append(spec_dict)
-                            else:
-                                non_matching.append(spec_dict)
+                        if spec.startswith(f"{pkg_name}@{model_version}"):
+                            matching.append(spec_dict)
                         else:
                             non_matching.append(spec_dict)
                     result = matching + non_matching
@@ -1644,12 +1639,8 @@ class EmcEnvChainerTUI:
                                     non_matching = []
                                     for spec_dict in result:
                                         spec = spec_dict.get('spec', '')
-                                        if '@' in spec:
-                                            spec_version = spec.split('@')[1].split()[0]
-                                            if spec_version == model_version:
-                                                matching.append(spec_dict)
-                                            else:
-                                                non_matching.append(spec_dict)
+                                        if spec.startswith(f"{pkg_name}@{model_version}"):
+                                            matching.append(spec_dict)
                                         else:
                                             non_matching.append(spec_dict)
                                     result = matching + non_matching
