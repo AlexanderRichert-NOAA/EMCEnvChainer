@@ -4,7 +4,10 @@
 
 The EMCEnvChainer utility allows NOAA developers to build their own copies of packages (i.e., model app dependencies) on top of existing spack-stack installations. It does so using Spack's environment chaining feature. Only the specifically requested package(s) and corresponding dependents need to be rebuilt, therefore as much of the existing installation as possible is reused, thereby reducing overall installation time and minimizing configuration differences (versions, build options) between the base (upstream) and user-built software stacks.
 
-The utility will automatically identify which platform (RDHPCS systems + Acorn) it is running on, and identify available base spack-stack installations, including the ones associated with supported model applications at the head of their respective default branches (i.e., "develop").
+The utility will automatically identify which platform (RDHPCS systems + Acorn) it is running on, and identify available base spack-stack installations, including the ones associated with supported model applications at the head of their respective default branches (i.e., "develop"). Users may choose to use a given application's package configuration as a starting point (recommended in most cases), or create an environment from scratch.
+
+> [!TIP]
+> [Video tutorials](https://drive.google.com/drive/folders/1RcWQ4xKcmrfLU6_VQja3KwJ-CbxB4i_6?usp=drive_link) walking through example use cases are available to NOAA users.
 
 ## Installation & basic usage
 
@@ -13,18 +16,21 @@ To use the utility, install it, invoke the `emcenvchainer` command, and follow t
 pip3 install emcenvchainer
 emcenvchainer
 ```
-You may choose a spack-stack installation and select individual packages to incorporate into your installation, or you may choose a model application to automatically obtain the list of dependencies based on the head of its default branch, then choose whether to customize the version/build options for each. The model applications currently supported are: UFS Weather Model, Global Workflow, GSI, UPP, UFS_UTILS, and AQM-utils. After the installation is complete, instructions are provided for accessing the stack.
+You may choose a spack-stack installation and select individual packages to incorporate into your installation, or you may choose a model application to automatically obtain the list of dependencies based on the head of its default branch, then choose whether to customize the version/build options for each. The model applications currently supported are: UFS Weather Model, Global Workflow, GSI, UPP, UFS_UTILS, and AQM-utils. After the installation is complete, instructions are provided for accessing the stack. The newly created Spack environment, including installed packages, module files, and any needed custom Spack package recipes are placed in a single directory inside the directory where the utility is run.
 
-> [!NOTE]
+> [!IMPORTANT]
 > **The Lmod module files and spack-stack metamodules for accessing the base and user packages are installed in a single location** in the user's space. Therefore, when setting `$MODULEPATH` for your application, it should *not* include the original spack-stack installation, only the one associated with the newly built Spack environment.
+
+> [!IMPORTANT]
+> Compatibility for xterm must be enabled in your terminal (PuTTY, Tectia/sshg3, SecureCRT) or the utility will immediately fail with an error.
+
+> [!TIP]
+> It is recommended to run `pip install --upgrade emcenvchainer` from time to time to ensure the latest updates are present, including fixes for site- or application-specific issues.
 
 To override the automatic platform detection, export the `$SITE_OVERRIDE` environment variable:
 ```console
 SITE_OVERRIDE=ursa emcenvchainer
 ```
-
-> [!IMPORTANT]
-> Compatibility for xterm must be enabled in your terminal (PuTTY, Tectia/sshg3, SecureCRT) or the utility will immediately fail with an error.
 
 ## Add'l usage & troubleshooting
 
@@ -45,17 +51,6 @@ $ . activate_spack_env.sh
 $ spack config add 'packages:hdf5:require:+szip' # or manually edit config files
 $ spack concretize
 $ spack install
-```
-
-### *I want to install additional packages*
-
-At any point after the Spack environment configuration (spack.yaml+various other files) has been written, you may modify the environment, including to add more packages. The simplest approach is to add new packages after the initial installation is complete. For example, if you have already run an installation based on the UFS Weather Model dependencies, the following steps can be used to add the MET and METplus packages:
-```console
-$ cd <Spack env directory>
-$ . activate_spack_env.sh
-$ spack install --add met metplus
-# if modules have not already been automatically generated:
-$ spack module lmod refresh
 ```
 
 ### *I'm getting angry emails from sys admins for running large builds on login nodes*
