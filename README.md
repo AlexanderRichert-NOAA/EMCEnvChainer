@@ -42,17 +42,6 @@ This problem can be straightforwardly worked around if you are using the model a
 
 There is little risk to locking any and all packages, as long as they are not packages that need building (i.e., package versions you have requested or dependents of packages you have selected to reconfigure). If locking packages leads to hard conflicts, the concretization will fail.
 
-### *I want to modify the Spack environment before installing*
-
-The utility can be halted at any time using Ctrl-c. At any time after the Spack environment configuration has been written (spack.yaml+various other files), you may stop the utility, activate the environment by sourcing `activate_spack_env.sh`, and modify the environment before running `spack install`. For example, to add a new package constraint:
-```console
-$ cd <Spack env directory>
-$ . activate_spack_env.sh
-$ spack config add 'packages:hdf5:require:+szip' # or manually edit config files
-$ spack concretize
-$ spack install
-```
-
 ### *I'm getting angry emails from sys admins for running large builds on login nodes*
 
 This utility does not currently support building under batch schedulers (SLURM, PBS Pro, etc.). To avoid angry emails, such as on the MSU systems (Orion & Hercules):
