@@ -57,11 +57,13 @@ class Config:
                 },
                 "rrfs_nco": {
                     "name": "RRFS (rrfs-nco)",
+                    "spack_metapackage": "rrfs-workflow-env",
                     "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/rrfs_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 },
                 "rrfs_dev_sci": {
                     "name": "RRFS (dev-sci)",
+                    "spack_metapackage": "rrfs-workflow-env",
                     "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/rrfs_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 }

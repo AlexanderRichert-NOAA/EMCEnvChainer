@@ -100,20 +100,7 @@ class ModelApplication:
         
         self._dependencies = []
         
-        # Parse dependencies from platform-specific module file
         module_content = self.download_module_file()
-        
-        # Also parse from common module file if it exists (for apps like RRFS)
-        common_module_url = self.config.get("common_module_url")
-        if common_module_url:
-            try:
-                response = requests.get(common_module_url, timeout=30)
-                response.raise_for_status()
-                # Combine both module contents with a separator
-                module_content = module_content + "\n" + response.text
-            except requests.RequestException:
-                # If common module fails to download, just use platform-specific
-                pass
         
         # Pattern handlers with specific logic for each pattern type
         pattern_handlers = {
@@ -177,13 +164,7 @@ class ModelApplication:
             if package_name.startswith("stack-") or package_name in ["ufs_common", "zlib"]:
                 return None
             
-            # First, try to extract version directly from os.getenv("..._ver") or "version" pattern
-            inline_version_match = re.search(r'os\.getenv\([^)]+\)\s*or\s*"([^"]+)"', version_var)
-            if inline_version_match:
-                version = inline_version_match.group(1)
-                return (package_name, version)
-            
-            # If no inline version, try to find the version by looking for the variable definition
+            # Try to find the version by looking for the variable definition
             version_pattern = f'{version_var.replace("_ver", "")}_ver\\s*=.*?"([^"]+)"'
             version_match = re.search(version_pattern, module_content)
             if version_match:
@@ -363,13 +344,7 @@ class ModelApplication:
         """Handle pathJoin pattern for upgradable packages."""
         package_name = match.group(1).lower()
         version_var = match.group(2).strip()
-        
-        # First, try to extract version directly from os.getenv("..._ver") or "version" pattern
-        inline_version_match = re.search(r'os\.getenv\([^)]+\)\s*or\s*"([^"]+)"', version_var)
-        if inline_version_match:
-            return (package_name, inline_version_match.group(1))
-        
-        # If no inline version, try to find the version definition
+        # Try to find the version definition
         version_pattern = f'{version_var.replace("_ver", "")}_ver\\s*=.*?"([^"]+)"'
         version_match = re.search(version_pattern, module_content)
         version = version_match.group(1) if version_match else None
