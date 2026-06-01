@@ -296,7 +296,7 @@ class Config:
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c6",
                     "hostname_patterns": ["gaea6[0-8].ncrc.gov"],
                     "spack_stack_path_overrides": [
-                        {"old": "/autofs/ncrc-svm1_proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0", "new": "/autofs/ncrc-svm1_proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0-new"}
+                        {"old": "/ncrc/proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0", "new": "/ncrc/proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0-new"}
                     ],
                     "model_applications": {
                         "ufs_weather_model": {
