@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 class ModelApplication:
     """Represents a model application with its module file."""
     
-    def __init__(self, name: str, config: Dict, platform_name: str, selected_module_url: str = None):
+    def __init__(self, name: str, config: Dict, platform_name: str, selected_module_url: str = None, 
+                 spack_stack_path_overrides: List[Dict] = None):
         """Initialize model application.
         
         Args:
@@ -20,11 +21,13 @@ class ModelApplication:
             config: Application configuration
             platform_name: Platform name for URL template
             selected_module_url: Specific module URL to use (if None, will need selection)
+            spack_stack_path_overrides: List of path override dictionaries with 'old' and 'new' keys
         """
         self.name = name
         self.config = config
         self.platform_name = platform_name
         self.selected_module_url = selected_module_url
+        self.spack_stack_path_overrides = spack_stack_path_overrides or []
         self._module_content = None
         self._install_path = None
         self._dependencies = None
@@ -65,9 +68,34 @@ class ModelApplication:
             response = requests.get(self.module_url, timeout=30)
             response.raise_for_status()
             self._module_content = response.text
+            # Apply path overrides if configured
+            self._module_content = self._apply_path_overrides(self._module_content)
             return self._module_content
         except requests.RequestException as e:
             raise RuntimeError(f"Failed to download module file from {self.module_url}: {e}")
+    
+    def _apply_path_overrides(self, content: str) -> str:
+        """Apply spack-stack path overrides to module content.
+        
+        Args:
+            content: Original module file content
+            
+        Returns:
+            Module content with paths replaced
+        """
+        if not self.spack_stack_path_overrides:
+            return content
+        
+        modified_content = content
+        for override in self.spack_stack_path_overrides:
+            old_path = override.get("old")
+            new_path = override.get("new")
+            
+            if old_path and new_path:
+                # Simple string replacement (not regex)
+                modified_content = modified_content.replace(old_path, new_path)
+        
+        return modified_content
     
     def extract_install_path(self) -> Optional[str]:
         """Extract installation path from module file.
@@ -413,10 +441,12 @@ class ModelApplicationManager:
         if self._applications is None:
             self._applications = []
             app_configs = self.platform_config.get("model_applications", {})
+            spack_stack_path_overrides = self.platform_config.get("spack_stack_path_overrides", [])
             
             for app_name, app_config in app_configs.items():
                 merged_app_config = self._merge_application_config(app_name, app_config)
-                app = ModelApplication(app_name, merged_app_config, self.platform_name)
+                app = ModelApplication(app_name, merged_app_config, self.platform_name, 
+                                     spack_stack_path_overrides=spack_stack_path_overrides)
                 self._applications.append(app)
         
         return self._applications

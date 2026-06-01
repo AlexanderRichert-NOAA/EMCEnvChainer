@@ -1305,7 +1305,9 @@ class EmcEnvChainerTUI:
             # Create model application instance if needed
             if selected_module_url:
                 from .model_apps import ModelApplication
-                model_app = ModelApplication(app.name, app.config, app.platform_name, selected_module_url)
+                spack_stack_path_overrides = self.platform.config.get("spack_stack_path_overrides", [])
+                model_app = ModelApplication(app.name, app.config, app.platform_name, selected_module_url,
+                                           spack_stack_path_overrides=spack_stack_path_overrides)
             else:
                 model_app = app
             
@@ -1405,7 +1407,9 @@ class EmcEnvChainerTUI:
         selected_module_url = installation.get("selected_module_url")
         if selected_module_url:
             from .model_apps import ModelApplication
-            selected_app = ModelApplication(app.name, app.config, app.platform_name, selected_module_url)
+            spack_stack_path_overrides = self.platform.config.get("spack_stack_path_overrides", [])
+            selected_app = ModelApplication(app.name, app.config, app.platform_name, selected_module_url,
+                                          spack_stack_path_overrides=spack_stack_path_overrides)
         else:
             # Fallback to the original app if no specific URL was selected
             selected_app = app

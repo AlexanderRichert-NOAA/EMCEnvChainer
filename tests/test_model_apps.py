@@ -495,3 +495,86 @@ load("hdf5/1.10.8")
         
         assert netcdf_dep['version'] == "4.8.1"  # From module file
         assert netcdf_upgradable['version'] == "4.9.2"  # From common module file
+
+    
+    @patch('requests.get')
+    def test_spack_stack_path_overrides_multiple(self, mock_get):
+        """Test that multiple path overrides are applied correctly."""
+        module_content = '''-- Test Module File
+prepend_path("MODULEPATH", "/old/path1/modulefiles")
+setenv("PATH2", "/old/path2/bin")
+load("some-package")
+'''
+        
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.text = module_content
+        mock_get.return_value = mock_response
+        
+        config = {
+            "module_url_templates": ["https://example.com/test.lua"]
+        }
+        
+        # Define multiple path overrides
+        path_overrides = [
+            {"old": "/old/path1", "new": "/new/path1"},
+            {"old": "/old/path2", "new": "/new/path2"}
+        ]
+        
+        app = ModelApplication("test_app", config, "test_platform",
+                             spack_stack_path_overrides=path_overrides)
+        
+        downloaded_content = app.download_module_file()
+        
+        # Verify all overrides were applied
+        assert "/old/path1" not in downloaded_content
+        assert "/old/path2" not in downloaded_content
+        assert "/new/path1/modulefiles" in downloaded_content
+        assert "/new/path2/bin" in downloaded_content
+    
+    @patch('requests.get')
+    def test_spack_stack_path_overrides_none(self, mock_get):
+        """Test that module content is unchanged when no overrides are configured."""
+        module_content = '''-- Test Module File
+prepend_path("MODULEPATH", "/some/path/modulefiles")
+'''
+        
+        mock_response = Mock()
+        mock_response.raise_for_status.return_value = None
+        mock_response.text = module_content
+        mock_get.return_value = mock_response
+        
+        config = {
+            "module_url_templates": ["https://example.com/test.lua"]
+        }
+        
+        # No path overrides
+        app = ModelApplication("test_app", config, "test_platform")
+        
+        downloaded_content = app.download_module_file()
+        
+        # Content should be unchanged
+        assert downloaded_content == module_content
+    
+    def test_model_application_manager_passes_overrides(self):
+        """Test that ModelApplicationManager passes path overrides to ModelApplication instances."""
+        platform_config = {
+            "spack_stack_path_overrides": [
+                {"old": "/old/path", "new": "/new/path"}
+            ],
+            "model_applications": {
+                "test_app": {
+                    "module_url_templates": ["https://example.com/test.lua"]
+                }
+            }
+        }
+        
+        manager = ModelApplicationManager(platform_config, "test_platform")
+        apps = manager.applications
+        
+        assert len(apps) == 1
+        app = apps[0]
+        
+        # Verify path overrides were passed to the application
+        assert app.spack_stack_path_overrides == [{"old": "/old/path", "new": "/new/path"}]
+

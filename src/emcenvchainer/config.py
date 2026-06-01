@@ -57,13 +57,11 @@ class Config:
                 },
                 "rrfs_nco": {
                     "name": "RRFS (rrfs-nco)",
-                    "spack_metapackage": "rrfs-workflow-env",
                     "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/rrfs-nco/modulefiles/rrfs_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 },
                 "rrfs_dev_sci": {
                     "name": "RRFS (dev-sci)",
-                    "spack_metapackage": "rrfs-workflow-env",
                     "common_module_url": "https://raw.githubusercontent.com/NOAA-EMC/rrfs-workflow/dev-sci/modulefiles/rrfs_common.lua",
                     "install_path_regex": r'prepend_path\("MODULEPATH",\s*"([^"]+)modulefiles/Core.?"\)'
                 }
@@ -297,6 +295,9 @@ class Config:
                     "name": "Gaea C6 (NCRC/NOAA)",
                     "spack_stack_path": "/ncrc/proj/epic/spack-stack/c6",
                     "hostname_patterns": ["gaea6[0-8].ncrc.gov"],
+                    "spack_stack_path_overrides": [
+                        {"old": "/autofs/ncrc-svm1_proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0", "new": "/autofs/ncrc-svm1_proj/epic/spack-stack/c6/spack-stack-1.9.2/envs/ue-intel-2023.2.0-new"}
+                    ],
                     "model_applications": {
                         "ufs_weather_model": {
                             "module_url_templates": [
