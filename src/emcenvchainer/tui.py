@@ -1531,15 +1531,20 @@ class EmcEnvChainerTUI:
             menu.display_info(msg)
             return []
 
-        radio_menu = RadioButtonMenu(stdscr, "Select packages to update, modify, or lock from upstream")
-
-        # --- Upstream lock state infrastructure ---
-        # Compute upstream env path (parent of 'install' directory if present)
+        # Compute upstream env path (parent of 'install' directory if present) for display
         _upstream_env_path = None
         if upstream_path and spack_manager:
             _up_obj = Path(upstream_path)
             _upstream_env_path = _up_obj.parent if _up_obj.name == 'install' else _up_obj
 
+        # Create menu title with upstream path
+        menu_title = "Select packages to update, modify, or lock from upstream"
+        if _upstream_env_path:
+            menu_title += f"\nUpstream: {_upstream_env_path}"
+        
+        radio_menu = RadioButtonMenu(stdscr, menu_title)
+
+        # --- Upstream lock state infrastructure ---
         locks: Dict[int, Optional[Dict]] = {}      # pkg idx -> {'hash': ..., 'spec': ...} or None
         removed_items: set = set()                     # pkg indices marked for removal from env
         buildable_false_items: set = set()             # pkg indices marked buildable:false
