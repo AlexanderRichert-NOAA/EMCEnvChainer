@@ -1409,7 +1409,8 @@ class TestEmcEnvChainerTUI:
                 "global-workflow", 
                 {"name": "Global Workflow"}, 
                 "hera", 
-                "http://example.com/module.lua"
+                "http://example.com/module.lua",
+                spack_stack_path_overrides=[]
             )
             
             # Should infer spack root correctly
@@ -1854,7 +1855,8 @@ class TestEmcEnvChainerTUI:
                 "global-workflow",
                 {"name": "Global Workflow"},
                 "hera",
-                "http://example.com/gw.gcc.lua"
+                "http://example.com/gw.gcc.lua",
+                spack_stack_path_overrides=[]
             )
             
             assert result == expected_packages
